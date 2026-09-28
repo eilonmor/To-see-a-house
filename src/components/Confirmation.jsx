@@ -1,7 +1,7 @@
 import { useI18n } from '../i18n/I18nProvider'
-import { Button, Card } from './ui'
+import { Card } from './ui'
 
-export default function Confirmation({ slot, details, instructions, onDone }) {
+export default function Confirmation({ slot, details, instructions }) {
   const { t } = useI18n()
   return (
     <Card className="mx-auto max-w-md text-center">
@@ -38,10 +38,6 @@ export default function Confirmation({ slot, details, instructions, onDone }) {
           </p>
         </div>
       )}
-
-      <Button variant="secondary" className="mt-6 w-full" onClick={onDone}>
-        {t.confirmation.another}
-      </Button>
     </Card>
   )
 }

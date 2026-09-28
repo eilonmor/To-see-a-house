@@ -54,7 +54,6 @@ export const translations = {
       time: 'שעה',
       name: 'שם',
       phone: 'טלפון',
-      another: 'הזמנה למבקר נוסף',
       instructionsTitle: 'מידע חשוב לקראת הביקור',
     },
     instructions: {
@@ -150,7 +149,6 @@ export const translations = {
       time: 'Time',
       name: 'Name',
       phone: 'Phone',
-      another: 'Book another visitor',
       instructionsTitle: 'Before your visit',
     },
     instructions: {

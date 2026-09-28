@@ -30,13 +30,6 @@ export default function BookingPage() {
     }
   }
 
-  function startOver() {
-    setDetails({ name: '', phone: '' })
-    setBookedSlot(null)
-    setSubmitError('')
-    setStep(0)
-  }
-
   return (
     <div className="space-y-6">
       <div className="pt-4 text-center">
@@ -70,7 +63,7 @@ export default function BookingPage() {
         />
       )}
 
-      {step === 2 && <Confirmation slot={bookedSlot} details={details} instructions={instructions} onDone={startOver} />}
+      {step === 2 && <Confirmation slot={bookedSlot} details={details} instructions={instructions} />}
     </div>
   )
 }
