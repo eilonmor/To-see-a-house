@@ -98,7 +98,20 @@ export function fetchRecord() {
   return readRecord()
 }
 
-const digitsOnly = (phone) => phone.replace(/\D/g, '')
+// The phone number is the visitor's identity: one booking per number.
+// Compare digits only, and treat the Israeli +972 prefix like a leading 0,
+// so "050-123-4567" and "+972 50 123 4567" are the same visitor.
+export function phoneKey(phone) {
+  const digits = String(phone).replace(/\D/g, '')
+  return digits.startsWith('972') ? `0${digits.slice(3)}` : digits
+}
+
+/** Finds a visitor's booking by phone: { slot, booking } or null. */
+export function findBookingByPhone(bookings, phone) {
+  const key = phoneKey(phone)
+  const entry = Object.entries(bookings).find(([, b]) => phoneKey(b.phone) === key)
+  return entry ? { slot: entry[0], booking: entry[1] } : null
+}
 
 /**
  * Books a slot. Re-reads the latest data right before writing so a slot that
@@ -110,10 +123,8 @@ export async function bookSlot(slot, { name, phone }) {
   const record = await readRecord()
   if (record.bookings[slot]) throw new SlotTakenError(slot)
 
-  const existing = Object.entries(record.bookings).find(
-    ([, b]) => digitsOnly(b.phone) === digitsOnly(phone),
-  )
-  if (existing) throw new BookingError('duplicate', { slot: existing[0] })
+  const existing = findBookingByPhone(record.bookings, phone)
+  if (existing) throw new BookingError('duplicate', { slot: existing.slot })
 
   const next = {
     ...record,
@@ -123,6 +134,30 @@ export async function bookSlot(slot, { name, phone }) {
     },
   }
   return writeRecord(next)
+}
+
+/**
+ * Moves a visitor's booking (found by phone) to a new slot and frees the old
+ * one in the same write. If the booking no longer exists (e.g. the admin
+ * released it), the visitor is simply booked into the new slot.
+ */
+export async function rescheduleBooking(phone, newSlot, { name } = {}) {
+  if (!TIME_SLOTS.includes(newSlot)) throw new BookingError('unknownSlot')
+
+  const record = await readRecord()
+  const existing = findBookingByPhone(record.bookings, phone)
+  if (existing?.slot === newSlot) return record
+  if (record.bookings[newSlot]) throw new SlotTakenError(newSlot)
+
+  const bookings = { ...record.bookings }
+  const now = new Date().toISOString()
+  if (existing) {
+    delete bookings[existing.slot]
+    bookings[newSlot] = { ...existing.booking, updatedAt: now }
+  } else {
+    bookings[newSlot] = { name: (name || '').trim(), phone: phone.trim(), createdAt: now }
+  }
+  return writeRecord({ ...record, bookings })
 }
 
 /** Removes the booking for a slot, making it available again. */

@@ -8,6 +8,15 @@ on a password-protected admin dashboard. Bookings are stored in a free
 - **Visitor page** (`/`): the visitor enters their full name and phone number,
   then picks one of the available time slots. Booked slots are greyed out and
   can't be picked. After booking, a confirmation screen appears.
+- **The phone number is the visitor's identity.** Each number can hold only
+  one booking. A returning visitor who enters the same number, even written as
+  `+972 50…` instead of `050…`, sees their existing booking instead of the slot
+  grid.
+- **Changing the arrival time.** The confirmation screen has a *Change arrival
+  time* button. It opens the slots with the visitor's current time marked.
+  Nothing changes until they pick another free time and press *Approve change*.
+  The booking then moves to the new time, and the old time is freed in the
+  same save. If no other time is free, the current booking is kept.
 - **Admin dashboard** (`/#/admin`): protected by the password `eilonC110`.
   Shows a table of every time slot in order, with the visitor's name and phone
   number (tap to call) or "Available". Any booking can be released.
@@ -180,7 +189,10 @@ This setup is free and has no server. That comes with trade-offs you should know
   re-reads the bin and refuses a slot that has just been taken ("just booked by
   someone else"). Two people pressing *Confirm* in the same instant could still
   collide. That's rare for a single viewing.
-- **One booking per phone number.** A second booking with the same number is refused.
+- **One booking per phone number.** A second booking with the same number is
+  never created. The visitor is shown their existing booking instead, and can
+  change its time. Anyone who knows a visitor's phone number could change that
+  visitor's time, because there's no login for visitors.
 - **Request quota.** Every refresh counts against your jsonbin.io free-plan
   request quota. The app only polls while the tab is visible. If you expect
   heavy traffic, raise `POLL_INTERVAL_MS`, and check your usage on the jsonbin dashboard.

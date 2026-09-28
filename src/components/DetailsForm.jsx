@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
-import { Button, Card, Field } from './ui'
+import { Button, Card, Field, Spinner } from './ui'
 
 function validate({ name, phone }, t) {
   const errors = {}
@@ -12,7 +12,7 @@ function validate({ name, phone }, t) {
   return errors
 }
 
-export default function DetailsForm({ initial, onSubmit }) {
+export default function DetailsForm({ initial, busy, onSubmit }) {
   const { t } = useI18n()
   const [values, setValues] = useState(initial)
   const [errors, setErrors] = useState({})
@@ -24,6 +24,7 @@ export default function DetailsForm({ initial, onSubmit }) {
 
   function handleSubmit(e) {
     e.preventDefault()
+    if (busy) return
     const errs = validate(values, t)
     setErrors(errs)
     if (Object.keys(errs).length === 0) onSubmit({ name: values.name.trim(), phone: values.phone.trim() })
@@ -55,8 +56,8 @@ export default function DetailsForm({ initial, onSubmit }) {
           onChange={update('phone')}
           error={errors.phone}
         />
-        <Button type="submit" className="w-full">
-          {t.details.continue}
+        <Button type="submit" className="w-full" disabled={busy}>
+          {busy && <Spinner />} {busy ? t.details.checking : t.details.continue}
         </Button>
       </form>
     </Card>
