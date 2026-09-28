@@ -1,32 +1,47 @@
 import { isDemoMode } from '../lib/bookingStore'
+import { useI18n } from '../i18n/I18nProvider'
+import { LANGUAGES } from '../i18n/translations'
 
 export default function Layout({ isAdmin, children }) {
+  const { t, lang, setLang } = useI18n()
+  const otherLang = lang === 'he' ? 'en' : 'he'
+
   return (
     <div className="min-h-screen bg-linear-to-b from-indigo-50 via-slate-50 to-slate-50 text-slate-800">
-      <header className="mx-auto flex max-w-3xl items-center justify-between px-4 py-5">
+      <header className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-5">
         <a href="#/" className="flex items-center gap-2 font-semibold text-slate-900">
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-indigo-600 text-white shadow-sm">
             <HouseIcon />
           </span>
-          Apartment Viewing
+          {t.appName}
         </a>
-        {isAdmin ? (
-          <a href="#/" className="text-sm text-slate-500 hover:text-slate-800">
-            ← Booking page
-          </a>
-        ) : (
-          <a href="#/admin" className="text-sm text-slate-400 hover:text-slate-700">
-            Admin
-          </a>
-        )}
+        <div className="flex items-center gap-4 text-sm">
+          <button
+            type="button"
+            onClick={() => setLang(otherLang)}
+            lang={otherLang}
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-medium text-slate-600 shadow-sm hover:bg-slate-50"
+          >
+            {LANGUAGES[otherLang].label}
+          </button>
+          {isAdmin ? (
+            <a href="#/" className="text-slate-500 hover:text-slate-800">
+              {t.backToBooking}
+            </a>
+          ) : (
+            <a href="#/admin" className="text-slate-400 hover:text-slate-700">
+              {t.adminLink}
+            </a>
+          )}
+        </div>
       </header>
 
       {isDemoMode && (
         <div className="mx-auto mb-4 max-w-3xl px-4">
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            <strong>Demo mode:</strong> jsonbin.io is not configured, so bookings are only saved in this
-            browser. Set <code className="font-mono">VITE_JSONBIN_BIN_ID</code> and{' '}
-            <code className="font-mono">VITE_JSONBIN_ACCESS_KEY</code> to sync across devices.
+            <strong>{t.demoBanner.title}</strong> {t.demoBanner.body}{' '}
+            <code className="font-mono">VITE_JSONBIN_BIN_ID</code> {t.demoBanner.and}{' '}
+            <code className="font-mono">VITE_JSONBIN_ACCESS_KEY</code> {t.demoBanner.suffix}
           </div>
         </div>
       )}

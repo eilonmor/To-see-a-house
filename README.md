@@ -12,6 +12,9 @@ on a password-protected admin dashboard. Bookings are stored in a free
   Shows a table of every time slot in order, with the visitor's name and phone
   number (tap to call) or "Available". Any booking can be released.
 
+The interface is in **Hebrew (right-to-left) by default**, and a button in the
+header switches to **English**. Each browser remembers its visitor's choice.
+
 Open pages re-fetch bookings every 15 seconds, and again as soon as you return
 to the tab. The admin page also has a **Refresh** button.
 
@@ -102,12 +105,16 @@ Share the root URL with visitors. You reach the dashboard at `https://your-site/
 
 ## Customizing
 
-Everything lives in [`src/config.js`](src/config.js):
+Most settings live in [`src/config.js`](src/config.js):
 
 - `TIME_SLOTS`: the list of visiting hours, e.g. `['16:00', '16:30', ...]`
-- `EVENT`: the title and subtitle on the booking page (add the date or address here)
+- `DEFAULT_LANGUAGE`: `'he'` (Hebrew, RTL) or `'en'` (English)
 - `ADMIN_PASSWORD`: the admin password (`eilonC110`)
 - `POLL_INTERVAL_MS`: how often open pages re-fetch bookings
+
+All on-screen text, in both languages, is in
+[`src/i18n/translations.js`](src/i18n/translations.js). To show the viewing's
+date or address, edit `event.title` / `event.subtitle` there for each language.
 
 To reset all bookings, release them from the dashboard, or edit the bin on
 jsonbin.io back to `{ "bookings": {} }`.
@@ -120,6 +127,9 @@ jsonbin.io back to `{ "bookings": {} }`.
 src/
 ├── config.js                  # time slots, password, polling, jsonbin env vars
 ├── App.jsx                    # picks the visitor or admin view from the URL hash
+├── i18n/
+│   ├── translations.js        # Hebrew + English texts
+│   └── I18nProvider.jsx       # language state, sets <html lang/dir>, useI18n()
 ├── lib/bookingStore.js        # jsonbin.io API (read / book / release) + demo fallback
 ├── hooks/
 │   ├── useBookings.js         # loads bookings and keeps them fresh (polling)

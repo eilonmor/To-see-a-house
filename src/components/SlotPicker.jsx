@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { TIME_SLOTS } from '../config'
+import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Alert, Button, Card, Spinner } from './ui'
 
 export default function SlotPicker({ bookings, loading, loadError, submitError, submitting, details, onBack, onConfirm }) {
+  const { t } = useI18n()
   const [selected, setSelected] = useState(null)
 
   // If the selected slot gets booked by someone else (via polling), clear it.
@@ -16,32 +18,34 @@ export default function SlotPicker({ bookings, loading, loadError, submitError, 
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Choose a time</h2>
+          <h2 className="text-lg font-semibold text-slate-900">{t.slots.title}</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Booking for <span className="font-medium text-slate-700">{details.name}</span>
+            {t.slots.bookingFor} <span className="font-medium text-slate-700">{details.name}</span>
           </p>
         </div>
         {!loading && (
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-            {availableCount} of {TIME_SLOTS.length} available
+            {t.slots.availableOf(availableCount, TIME_SLOTS.length)}
           </span>
         )}
       </div>
 
       <div className="mt-6 space-y-4">
-        {loadError && <Alert>Could not load availability: {loadError}</Alert>}
+        {loadError && <Alert>
+            {t.slots.loadError} {errorText(loadError, t)}
+          </Alert>}
         {submitError && <Alert>{submitError}</Alert>}
 
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-12 text-slate-500">
-            <Spinner /> Loading available times…
+            <Spinner /> {t.slots.loading}
           </div>
         ) : availableCount === 0 ? (
-          <Alert tone="info">Sorry — all viewing times are fully booked.</Alert>
+          <Alert tone="info">{t.slots.fullyBooked}</Alert>
         ) : null}
 
         {!loading && (
-          <div role="radiogroup" aria-label="Available time slots" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div role="radiogroup" aria-label={t.slots.groupLabel} className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {TIME_SLOTS.map((slot) => {
               const taken = Boolean(bookings[slot])
               const isSelected = selected === slot
@@ -63,7 +67,7 @@ export default function SlotPicker({ bookings, loading, loadError, submitError, 
                 >
                   <span className={`block text-lg font-semibold ${taken ? 'line-through' : ''}`}>{slot}</span>
                   <span className={`block text-xs ${isSelected ? 'text-indigo-100' : taken ? 'text-slate-400' : 'text-emerald-600'}`}>
-                    {taken ? 'Booked' : isSelected ? 'Selected' : 'Available'}
+                    {taken ? t.slots.booked : isSelected ? t.slots.selected : t.slots.available}
                   </span>
                 </button>
               )
@@ -74,17 +78,17 @@ export default function SlotPicker({ bookings, loading, loadError, submitError, 
 
       <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
         <Button variant="secondary" onClick={onBack} disabled={submitting}>
-          ← Back
+          {t.slots.back}
         </Button>
         <Button onClick={() => onConfirm(selected)} disabled={!selected || submitting}>
           {submitting ? (
             <>
-              <Spinner /> Booking…
+              <Spinner /> {t.slots.submitting}
             </>
           ) : selected ? (
-            `Confirm ${selected}`
+            t.slots.confirm(selected)
           ) : (
-            'Select a time'
+            t.slots.select
           )}
         </Button>
       </div>

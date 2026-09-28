@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { ADMIN_PASSWORD } from '../config'
+import { useI18n } from '../i18n/I18nProvider'
 import { Button, Card, Field } from './ui'
 
 export default function AdminLogin({ onSuccess }) {
+  const { t } = useI18n()
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
@@ -11,7 +13,7 @@ export default function AdminLogin({ onSuccess }) {
     if (password === ADMIN_PASSWORD) {
       onSuccess()
     } else {
-      setError('Incorrect password.')
+      setError(t.login.wrong)
       setPassword('')
     }
   }
@@ -24,12 +26,12 @@ export default function AdminLogin({ onSuccess }) {
           <path d="M8 11V7a4 4 0 118 0v4" />
         </svg>
       </div>
-      <h1 className="mt-4 text-center text-xl font-semibold text-slate-900">Admin access</h1>
-      <p className="mt-1 text-center text-sm text-slate-500">Enter the password to view bookings.</p>
+      <h1 className="mt-4 text-center text-xl font-semibold text-slate-900">{t.login.title}</h1>
+      <p className="mt-1 text-center text-sm text-slate-500">{t.login.subtitle}</p>
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         <Field
           id="password"
-          label="Password"
+          label={t.login.password}
           type="password"
           autoComplete="current-password"
           autoFocus
@@ -41,7 +43,7 @@ export default function AdminLogin({ onSuccess }) {
           error={error}
         />
         <Button type="submit" className="w-full" disabled={!password}>
-          Sign in
+          {t.login.submit}
         </Button>
       </form>
     </Card>

@@ -14,17 +14,19 @@ const LOCAL_KEY = 'apartment-viewing-bookings'
 
 export const isDemoMode = !JSONBIN.binId || !(JSONBIN.accessKey || JSONBIN.masterKey)
 
-export class SlotTakenError extends Error {
-  constructor(slot) {
-    super(`The ${slot} slot was just booked by someone else. Please choose another time.`)
-    this.name = 'SlotTakenError'
+// Errors carry a `code` (+ `params`) so the UI can show them in the active language.
+export class BookingError extends Error {
+  constructor(code, params = {}, message = code) {
+    super(message)
+    this.name = 'BookingError'
+    this.code = code
+    this.params = params
   }
 }
 
-export class DuplicateBookingError extends Error {
+export class SlotTakenError extends BookingError {
   constructor(slot) {
-    super(`This phone number already has a booking at ${slot}.`)
-    this.name = 'DuplicateBookingError'
+    super('slotTaken', { slot })
   }
 }
 
@@ -45,7 +47,7 @@ async function request(url, options) {
   try {
     res = await fetch(url, options)
   } catch {
-    throw new Error('Network error — please check your internet connection and try again.')
+    throw new BookingError('network')
   }
   if (!res.ok) {
     let detail = ''
@@ -54,7 +56,7 @@ async function request(url, options) {
     } catch {
       // ignore non-JSON error bodies
     }
-    throw new Error(`Booking server error (${res.status})${detail ? `: ${detail}` : ''}`)
+    throw new BookingError('server', { status: res.status, detail })
   }
   return res.json()
 }
@@ -100,7 +102,7 @@ const digitsOnly = (phone) => phone.replace(/\D/g, '')
  * was taken in the meantime is rejected instead of overwritten.
  */
 export async function bookSlot(slot, { name, phone }) {
-  if (!TIME_SLOTS.includes(slot)) throw new Error('Unknown time slot.')
+  if (!TIME_SLOTS.includes(slot)) throw new BookingError('unknownSlot')
 
   const record = await readRecord()
   if (record.bookings[slot]) throw new SlotTakenError(slot)
@@ -108,7 +110,7 @@ export async function bookSlot(slot, { name, phone }) {
   const existing = Object.entries(record.bookings).find(
     ([, b]) => digitsOnly(b.phone) === digitsOnly(phone),
   )
-  if (existing) throw new DuplicateBookingError(existing[0])
+  if (existing) throw new BookingError('duplicate', { slot: existing[0] })
 
   const next = {
     ...record,

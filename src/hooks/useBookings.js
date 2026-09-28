@@ -9,7 +9,7 @@ import { POLL_INTERVAL_MS } from '../config'
 export function useBookings() {
   const [bookings, setBookings] = useState({})
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
   const inFlight = useRef(false)
 
@@ -18,10 +18,10 @@ export function useBookings() {
     inFlight.current = true
     try {
       setBookings(await fetchBookings())
-      setError('')
+      setError(null)
       setLastUpdated(new Date())
     } catch (err) {
-      setError(err.message)
+      setError(err)
     } finally {
       inFlight.current = false
       setLoading(false)

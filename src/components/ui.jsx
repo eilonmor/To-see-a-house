@@ -22,7 +22,7 @@ export function Button({ variant = 'primary', className = '', ...props }) {
   )
 }
 
-export function Field({ label, id, error, ...inputProps }) {
+export function Field({ label, id, error, dir, ...inputProps }) {
   return (
     <div>
       <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-slate-700">
@@ -30,7 +30,8 @@ export function Field({ label, id, error, ...inputProps }) {
       </label>
       <input
         id={id}
-        className={`block w-full rounded-xl border bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 ${
+        dir={dir}
+        className={`block w-full rounded-xl border bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 rtl:text-right focus:outline-none focus:ring-2 ${
           error ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-indigo-500 focus:ring-indigo-100'
         }`}
         aria-invalid={Boolean(error)}

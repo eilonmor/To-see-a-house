@@ -1,14 +1,13 @@
 import { useState } from 'react'
-import { EVENT } from '../config'
 import { bookSlot, SlotTakenError } from '../lib/bookingStore'
 import { useBookings } from '../hooks/useBookings'
+import { errorText, useI18n } from '../i18n/I18nProvider'
 import DetailsForm from './DetailsForm'
 import SlotPicker from './SlotPicker'
 import Confirmation from './Confirmation'
 
-const STEPS = ['Your details', 'Choose a time', 'Confirmed']
-
 export default function BookingPage() {
+  const { t } = useI18n()
   const { bookings, setBookings, loading, error: loadError, refresh } = useBookings()
   const [step, setStep] = useState(0)
   const [details, setDetails] = useState({ name: '', phone: '' })
@@ -24,7 +23,7 @@ export default function BookingPage() {
       setBookedSlot(slot)
       setStep(2)
     } catch (err) {
-      setSubmitError(err.message)
+      setSubmitError(errorText(err, t))
       if (err instanceof SlotTakenError) refresh()
     } finally {
       setSubmitting(false)
@@ -41,8 +40,8 @@ export default function BookingPage() {
   return (
     <div className="space-y-6">
       <div className="pt-4 text-center">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">{EVENT.title}</h1>
-        <p className="mt-2 text-slate-500">{EVENT.subtitle}</p>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">{t.event.title}</h1>
+        <p className="mt-2 text-slate-500">{t.event.subtitle}</p>
       </div>
 
       <Stepper step={step} />
@@ -77,6 +76,8 @@ export default function BookingPage() {
 }
 
 function Stepper({ step }) {
+  const { t } = useI18n()
+  const STEPS = t.steps
   const finished = step === STEPS.length - 1
   return (
     <ol className="flex items-center justify-center gap-2 text-sm">

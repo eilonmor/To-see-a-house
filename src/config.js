@@ -2,12 +2,10 @@
 // App configuration — edit these values to fit your viewing event.
 // ---------------------------------------------------------------------------
 
-// Shown at the top of the booking page.
-export const EVENT = {
-  title: 'Apartment Viewing',
-  // Free text, e.g. "Sunday, 12 October" or the street address.
-  subtitle: 'Pick a time that works for you and we will see you there.',
-}
+// Default interface language: 'he' (Hebrew, right-to-left) or 'en' (English).
+// Visitors can switch with the toggle in the header; their choice is remembered.
+// Page texts (title, subtitle, etc.) are in src/i18n/translations.js.
+export const DEFAULT_LANGUAGE = 'he'
 
 // Available visiting hours, in the order they will be displayed.
 export const TIME_SLOTS = [
