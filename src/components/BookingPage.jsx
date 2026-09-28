@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { bookSlot, fetchRecord, findBookingByPhone, rescheduleBooking, SlotTakenError } from '../lib/bookingStore'
+import { bookSlot, cancelBooking, fetchRecord, findBookingByPhone, rescheduleBooking, SlotTakenError } from '../lib/bookingStore'
 import { useBookings } from '../hooks/useBookings'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import DetailsForm from './DetailsForm'
@@ -18,8 +18,10 @@ export default function BookingPage() {
   const [submitError, setSubmitError] = useState('')
   // 'new' = first booking for this phone; 'reschedule' = moving an existing booking.
   const [mode, setMode] = useState('new')
-  // The visitor's booking: { slot, name, phone, kind: 'booked' | 'rescheduled' | 'existing', previousSlot? }
+  // The visitor's booking: { slot, name, phone, kind: 'booked' | 'rescheduled' | 'existing' | 'cancelled', previousSlot? }
   const [result, setResult] = useState(null)
+  const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState('')
 
   function showExisting({ slot, booking }) {
     setResult({ slot, name: booking.name, phone: booking.phone, kind: 'existing' })
@@ -85,6 +87,28 @@ export default function BookingPage() {
     refresh()
   }
 
+  async function handleCancel() {
+    if (!window.confirm(t.confirmation.confirmCancel(result.slot))) return
+    setCancelling(true)
+    setCancelError('')
+    try {
+      setRecord(await cancelBooking(result.phone))
+      setResult({ ...result, kind: 'cancelled' })
+    } catch (err) {
+      setCancelError(`${t.confirmation.cancelError} ${errorText(err, t)}`)
+    } finally {
+      setCancelling(false)
+    }
+  }
+
+  function startNewBooking() {
+    setDetails({ name: result.name, phone: result.phone })
+    setMode('new')
+    setSubmitError('')
+    setStep('pick')
+    refresh()
+  }
+
   const rescheduling = mode === 'reschedule'
 
   return (
@@ -115,7 +139,17 @@ export default function BookingPage() {
         />
       )}
 
-      {step === 'done' && <Confirmation result={result} instructions={instructions} onChangeTime={startReschedule} />}
+      {step === 'done' && (
+        <Confirmation
+          result={result}
+          instructions={instructions}
+          cancelling={cancelling}
+          cancelError={cancelError}
+          onChangeTime={startReschedule}
+          onCancel={handleCancel}
+          onBookAgain={startNewBooking}
+        />
+      )}
     </div>
   )
 }

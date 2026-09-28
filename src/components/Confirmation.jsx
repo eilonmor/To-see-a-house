@@ -1,14 +1,32 @@
 import { useI18n } from '../i18n/I18nProvider'
-import { Button, Card } from './ui'
+import { Alert, Button, Card, Spinner } from './ui'
 
 /**
  * Shows the visitor's booking. `result.kind` is 'booked' (just booked),
- * 'rescheduled' (time just changed) or 'existing' (this phone already had a booking).
+ * 'rescheduled' (time just changed), 'existing' (this phone already had a booking)
+ * or 'cancelled' (the visitor just cancelled it).
  */
-export default function Confirmation({ result, instructions, onChangeTime }) {
+export default function Confirmation({ result, instructions, cancelling, cancelError, onChangeTime, onCancel, onBookAgain }) {
   const { t } = useI18n()
   const { slot, name, phone, kind, previousSlot } = result
   const copy = t.confirmation[kind]
+
+  if (kind === 'cancelled') {
+    return (
+      <Card className="mx-auto max-w-md text-center">
+        <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-slate-100 text-slate-500">
+          <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </div>
+        <h2 className="mt-5 text-2xl font-bold text-slate-900">{copy.title}</h2>
+        <p className="mt-2 text-slate-500">{copy.body(name, slot)}</p>
+        <Button variant="secondary" className="mt-6 w-full" onClick={onBookAgain}>
+          {t.confirmation.bookAgain}
+        </Button>
+      </Card>
+    )
+  }
 
   return (
     <Card className="mx-auto max-w-md text-center">
@@ -57,8 +75,17 @@ export default function Confirmation({ result, instructions, onChangeTime }) {
         </div>
       )}
 
-      <Button variant="secondary" className="mt-6 w-full" onClick={onChangeTime}>
+      {cancelError && (
+        <div className="mt-6">
+          <Alert>{cancelError}</Alert>
+        </div>
+      )}
+
+      <Button variant="secondary" className="mt-6 w-full" onClick={onChangeTime} disabled={cancelling}>
         {t.confirmation.changeTime}
+      </Button>
+      <Button variant="danger" className="mt-3 w-full" onClick={onCancel} disabled={cancelling}>
+        {cancelling ? <Spinner /> : null} {cancelling ? t.confirmation.cancelling : t.confirmation.cancel}
       </Button>
     </Card>
   )

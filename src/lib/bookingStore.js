@@ -160,6 +160,18 @@ export async function rescheduleBooking(phone, newSlot, { name } = {}) {
   return writeRecord({ ...record, bookings })
 }
 
+/**
+ * Cancels a visitor's booking (found by phone), making its slot available
+ * again. Does nothing if the booking no longer exists.
+ */
+export async function cancelBooking(phone) {
+  const record = await readRecord()
+  const existing = findBookingByPhone(record.bookings, phone)
+  if (!existing) return record
+  const { [existing.slot]: _removed, ...rest } = record.bookings
+  return writeRecord({ ...record, bookings: rest })
+}
+
 /** Removes the booking for a slot, making it available again. */
 export async function releaseSlot(slot) {
   const record = await readRecord()
