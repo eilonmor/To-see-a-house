@@ -9,10 +9,8 @@ export const DEFAULT_LANGUAGE = 'he'
 
 // Available visiting hours, in the order they will be displayed.
 export const TIME_SLOTS = [
-  '16:00', '16:30',
-  '17:00', '17:30',
-  '18:00', '18:30',
-  '19:00', '19:30',
+  '17:00', '17:10', '17:20', '17:30', '17:40', '17:50',
+  '18:00', '18:10', '18:20',
 ]
 
 // Fixed admin password (client-side check only — see README "Security notes").
