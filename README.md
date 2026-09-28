@@ -11,6 +11,10 @@ on a password-protected admin dashboard. Bookings are stored in a free
 - **Admin dashboard** (`/#/admin`): protected by the password `eilonC110`.
   Shows a table of every time slot in order, with the visitor's name and phone
   number (tap to call) or "Available". Any booking can be released.
+  The admin can also write **visitor instructions**, such as the address, floor,
+  door code, parking or a Waze link. These appear next to the success message
+  after a visitor books. Links become clickable, and leaving the field empty
+  shows nothing.
 
 The interface is in **Hebrew (right-to-left) by default**, and a button in the
 header switches to **English**. Each browser remembers its visitor's choice.
@@ -143,7 +147,8 @@ src/
     ├── Confirmation.jsx       # "your booking is registered" screen
     ├── AdminPage.jsx          # password gate (remembered for the browser session)
     ├── AdminLogin.jsx         # password form
-    └── AdminDashboard.jsx     # bookings table with Release buttons
+    ├── AdminDashboard.jsx     # bookings table with Release buttons
+    └── InstructionsEditor.jsx # admin editor for the post-booking instructions
 ```
 
 **Data format** stored in the bin:
@@ -152,7 +157,8 @@ src/
 {
   "bookings": {
     "16:30": { "name": "Dana Cohen", "phone": "050-123-4567", "createdAt": "2026-09-28T18:02:11.000Z" }
-  }
+  },
+  "instructions": "10 Herzl St., 3rd floor. Door code: 1234"
 }
 ```
 

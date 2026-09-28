@@ -2,7 +2,10 @@
 //
 // Bookings are stored as a single JSON document in a jsonbin.io bin:
 //
-//   { "bookings": { "16:00": { "name": "...", "phone": "...", "createdAt": "..." } } }
+//   {
+//     "bookings": { "16:00": { "name": "...", "phone": "...", "createdAt": "..." } },
+//     "instructions": "Free text the admin writes; shown to visitors after booking."
+//   }
 //
 // If no jsonbin.io credentials are configured, the store falls back to the
 // browser's localStorage so the app can be tried out locally ("demo mode").
@@ -39,7 +42,8 @@ function authHeaders() {
 
 function normalize(record) {
   const bookings = record && typeof record.bookings === 'object' && record.bookings ? record.bookings : {}
-  return { bookings }
+  const instructions = typeof record?.instructions === 'string' ? record.instructions : ''
+  return { bookings, instructions }
 }
 
 async function request(url, options) {
@@ -89,10 +93,9 @@ async function writeRecord(record) {
   return record
 }
 
-/** Returns the current bookings map: { [slot]: { name, phone, createdAt } } */
-export async function fetchBookings() {
-  const { bookings } = await readRecord()
-  return bookings
+/** Returns the current record: { bookings: { [slot]: { name, phone, createdAt } }, instructions } */
+export function fetchRecord() {
+  return readRecord()
 }
 
 const digitsOnly = (phone) => phone.replace(/\D/g, '')
@@ -119,15 +122,18 @@ export async function bookSlot(slot, { name, phone }) {
       [slot]: { name: name.trim(), phone: phone.trim(), createdAt: new Date().toISOString() },
     },
   }
-  await writeRecord(next)
-  return next.bookings
+  return writeRecord(next)
 }
 
 /** Removes the booking for a slot, making it available again. */
 export async function releaseSlot(slot) {
   const record = await readRecord()
   const { [slot]: _removed, ...rest } = record.bookings
-  const next = { ...record, bookings: rest }
-  await writeRecord(next)
-  return next.bookings
+  return writeRecord({ ...record, bookings: rest })
+}
+
+/** Saves the admin's instructions shown to visitors after they book. */
+export async function saveInstructions(text) {
+  const record = await readRecord()
+  return writeRecord({ ...record, instructions: text.trim() })
 }

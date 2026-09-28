@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchBookings } from '../lib/bookingStore'
+import { fetchRecord } from '../lib/bookingStore'
 import { POLL_INTERVAL_MS } from '../config'
 
+const EMPTY = { bookings: {}, instructions: '' }
+
 /**
- * Loads bookings and keeps them fresh: polls while the tab is visible and
+ * Loads bookings (and the admin's visitor instructions) and keeps them fresh: polls while the tab is visible and
  * re-fetches immediately when the user returns to the tab.
  */
 export function useBookings() {
-  const [bookings, setBookings] = useState({})
+  const [record, setRecord] = useState(EMPTY)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
@@ -17,7 +19,7 @@ export function useBookings() {
     if (inFlight.current) return
     inFlight.current = true
     try {
-      setBookings(await fetchBookings())
+      setRecord(await fetchRecord())
       setError(null)
       setLastUpdated(new Date())
     } catch (err) {
@@ -41,5 +43,6 @@ export function useBookings() {
     }
   }, [refresh])
 
-  return { bookings, setBookings, loading, error, lastUpdated, refresh }
+  const { bookings, instructions } = record
+  return { bookings, instructions, setRecord, loading, error, lastUpdated, refresh }
 }

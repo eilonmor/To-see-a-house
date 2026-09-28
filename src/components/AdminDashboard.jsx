@@ -4,10 +4,11 @@ import { releaseSlot } from '../lib/bookingStore'
 import { useBookings } from '../hooks/useBookings'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Alert, Button, Card, Spinner } from './ui'
+import InstructionsEditor from './InstructionsEditor'
 
 export default function AdminDashboard({ onLogout }) {
   const { t, lang } = useI18n()
-  const { bookings, setBookings, loading, error, lastUpdated, refresh } = useBookings()
+  const { bookings, instructions, setRecord, loading, error, lastUpdated, refresh } = useBookings()
   const [releasing, setReleasing] = useState(null)
   const [actionError, setActionError] = useState('')
 
@@ -19,7 +20,7 @@ export default function AdminDashboard({ onLogout }) {
     setReleasing(slot)
     setActionError('')
     try {
-      setBookings(await releaseSlot(slot))
+      setRecord(await releaseSlot(slot))
     } catch (err) {
       setActionError(`${t.dashboard.releaseError(slot)} ${errorText(err, t)}`)
     } finally {
@@ -53,9 +54,11 @@ export default function AdminDashboard({ onLogout }) {
         <Stat label={t.dashboard.available} value={TIME_SLOTS.length - bookedCount} tone="emerald" />
       </div>
 
-      {error && <Alert>
+      {error && (
+        <Alert>
           {t.dashboard.loadError} {errorText(error, t)}
-        </Alert>}
+        </Alert>
+      )}
       {actionError && <Alert>{actionError}</Alert>}
 
       <Card className="overflow-hidden p-0!">
@@ -122,6 +125,8 @@ export default function AdminDashboard({ onLogout }) {
           </div>
         )}
       </Card>
+
+      <InstructionsEditor instructions={instructions} disabled={loading} onSaved={setRecord} />
     </div>
   )
 }

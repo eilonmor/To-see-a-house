@@ -1,7 +1,7 @@
 import { useI18n } from '../i18n/I18nProvider'
 import { Button, Card } from './ui'
 
-export default function Confirmation({ slot, details, onDone }) {
+export default function Confirmation({ slot, details, instructions, onDone }) {
   const { t } = useI18n()
   return (
     <Card className="mx-auto max-w-md text-center">
@@ -30,9 +30,31 @@ export default function Confirmation({ slot, details, onDone }) {
         </div>
       </dl>
 
+      {instructions && (
+        <div className="mt-6 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-4 text-start">
+          <h3 className="text-sm font-semibold text-indigo-900">{t.confirmation.instructionsTitle}</h3>
+          <p dir="auto" className="mt-2 whitespace-pre-line break-words text-sm leading-relaxed text-slate-700">
+            <Linkified text={instructions} />
+          </p>
+        </div>
+      )}
+
       <Button variant="secondary" className="mt-6 w-full" onClick={onDone}>
         {t.confirmation.another}
       </Button>
     </Card>
+  )
+}
+
+// Renders plain text with any http(s) links made clickable (e.g. a Waze or Maps link).
+function Linkified({ text }) {
+  return text.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
+    i % 2 === 1 ? (
+      <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="font-medium text-indigo-600 underline" dir="ltr">
+        {part}
+      </a>
+    ) : (
+      part
+    ),
   )
 }

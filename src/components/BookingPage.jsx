@@ -8,7 +8,7 @@ import Confirmation from './Confirmation'
 
 export default function BookingPage() {
   const { t } = useI18n()
-  const { bookings, setBookings, loading, error: loadError, refresh } = useBookings()
+  const { bookings, instructions, setRecord, loading, error: loadError, refresh } = useBookings()
   const [step, setStep] = useState(0)
   const [details, setDetails] = useState({ name: '', phone: '' })
   const [submitting, setSubmitting] = useState(false)
@@ -19,7 +19,7 @@ export default function BookingPage() {
     setSubmitting(true)
     setSubmitError('')
     try {
-      setBookings(await bookSlot(slot, details))
+      setRecord(await bookSlot(slot, details))
       setBookedSlot(slot)
       setStep(2)
     } catch (err) {
@@ -70,7 +70,7 @@ export default function BookingPage() {
         />
       )}
 
-      {step === 2 && <Confirmation slot={bookedSlot} details={details} onDone={startOver} />}
+      {step === 2 && <Confirmation slot={bookedSlot} details={details} instructions={instructions} onDone={startOver} />}
     </div>
   )
 }
