@@ -126,6 +126,7 @@ export const translations = {
       network: () => 'שגיאת רשת — בדקו את החיבור לאינטרנט ונסו שוב.',
       server: ({ status }) => `שגיאה בשרת ההזמנות (${status}). נסו שוב בעוד רגע.`,
       unknownSlot: () => 'שעה לא מוכרת.',
+      conflict: () => 'מישהו אחר הזמין באותו רגע בדיוק וההזמנה שלכם לא נשמרה. נא לבחור שעה שוב.',
     },
   },
 
@@ -248,6 +249,7 @@ export const translations = {
       network: () => 'Network error — please check your internet connection and try again.',
       server: ({ status }) => `Booking server error (${status}). Please try again in a moment.`,
       unknownSlot: () => 'Unknown time slot.',
+      conflict: () => 'Someone else booked at the exact same moment and your booking was not saved. Please pick a time again.',
     },
   },
 }
