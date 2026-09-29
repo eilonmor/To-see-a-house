@@ -15,6 +15,12 @@ import { JSONBIN, TIME_SLOTS } from '../config'
 const API_BASE = 'https://api.jsonbin.io/v3/b'
 const LOCAL_KEY = 'apartment-viewing-bookings'
 
+// jsonbin.io has no atomic "save only if unchanged" write, so two visitors who
+// book within a second of each other can overwrite each other's booking.
+// After saving, we wait this long (so any save that raced ours has landed) and
+// then re-read to make sure our booking is really there.
+const VERIFY_DELAY_MS = 1500
+
 export const isDemoMode = !JSONBIN.binId || !(JSONBIN.accessKey || JSONBIN.masterKey)
 
 // Errors carry a `code` (+ `params`) so the UI can show them in the active language.
@@ -93,6 +99,24 @@ async function writeRecord(record) {
   return record
 }
 
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Re-reads the data after a write and checks that `slot` is still held by
+ * `phone`. If a concurrent save overwrote ours, throws SlotTakenError (someone
+ * else now holds the slot) or a 'conflict' error (the slot is free again), so
+ * the visitor is never told they're booked when they aren't.
+ */
+async function verifyBooking(slot, phone) {
+  if (isDemoMode) return readRecord()
+  await wait(VERIFY_DELAY_MS)
+  const record = await readRecord()
+  const booking = record.bookings[slot]
+  if (booking && phoneKey(booking.phone) === phoneKey(phone)) return record
+  if (booking) throw new SlotTakenError(slot)
+  throw new BookingError('conflict')
+}
+
 /** Returns the current record: { bookings: { [slot]: { name, phone, createdAt } }, instructions } */
 export function fetchRecord() {
   return readRecord()
@@ -133,7 +157,8 @@ export async function bookSlot(slot, { name, phone }) {
       [slot]: { name: name.trim(), phone: phone.trim(), createdAt: new Date().toISOString() },
     },
   }
-  return writeRecord(next)
+  await writeRecord(next)
+  return verifyBooking(slot, phone)
 }
 
 /**
@@ -157,7 +182,8 @@ export async function rescheduleBooking(phone, newSlot, { name } = {}) {
   } else {
     bookings[newSlot] = { name: (name || '').trim(), phone: phone.trim(), createdAt: now }
   }
-  return writeRecord({ ...record, bookings })
+  await writeRecord({ ...record, bookings })
+  return verifyBooking(newSlot, phone)
 }
 
 /**

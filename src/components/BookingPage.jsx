@@ -74,7 +74,7 @@ export default function BookingPage() {
         if (existing) return showExisting(existing)
       }
       setSubmitError(errorText(err, t))
-      if (err instanceof SlotTakenError) refresh()
+      if (err instanceof SlotTakenError || err.code === 'conflict') refresh()
     } finally {
       setSubmitting(false)
     }
