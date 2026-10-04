@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { signIn } from '../lib/adminStore'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Button, Card, Field, Spinner } from './ui'
@@ -11,7 +11,7 @@ export default function AdminLogin() {
   const [busy, setBusy] = useState(false)
 
   // On success, useSession() picks up the new session and shows the dashboard.
-  async function handleSubmit(e) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError('')

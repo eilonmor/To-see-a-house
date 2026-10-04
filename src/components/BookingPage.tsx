@@ -1,40 +1,51 @@
 import { useCallback, useState } from 'react'
-import { bookSlot, cancelBooking, fetchProperty, findGuestBookings, formatDate, rescheduleBooking } from '../lib/bookingStore'
+import {
+  BookingError,
+  bookSlot,
+  cancelBooking,
+  fetchProperty,
+  findGuestBookings,
+  formatDate,
+  rescheduleBooking,
+  type GuestBooking,
+  type GuestDetails,
+  type PublicProperty,
+  type SlotChoice,
+} from '../lib/bookingStore'
 import { usePolledData } from '../hooks/usePolledData'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Alert, Card, Spinner } from './ui'
 import DetailsForm from './DetailsForm'
 import SlotPicker from './SlotPicker'
-import Confirmation from './Confirmation'
+import Confirmation, { type BookingResult } from './Confirmation'
 
-const STEP_INDEX = { details: 0, pick: 1, done: 2 }
+type Step = 'details' | 'pick' | 'done'
+const STEP_INDEX: Record<Step, number> = { details: 0, pick: 1, done: 2 }
 
-export default function BookingPage({ slug }) {
+export default function BookingPage({ slug }: { slug: string }) {
   const { t, lang } = useI18n()
   const load = useCallback(() => fetchProperty(slug), [slug])
-  const { data: property, loading, error: loadError, refresh } = usePolledData(load, null)
-  const [step, setStep] = useState('details')
-  const [details, setDetails] = useState({ name: '', phone: '' })
+  const { data: property, loading, error: loadError, refresh } = usePolledData<PublicProperty | null>(load, null)
+  const [step, setStep] = useState<Step>('details')
+  const [details, setDetails] = useState<GuestDetails>({ name: '', phone: '' })
   const [checking, setChecking] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   // 'new' = first booking for this phone; 'reschedule' = moving an existing booking.
-  const [mode, setMode] = useState('new')
-  // The visitor's booking: { dayId, date, slot, name, phone, instructions,
-  //   kind: 'booked' | 'rescheduled' | 'existing' | 'cancelled', previousWhen? }
-  const [result, setResult] = useState(null)
+  const [mode, setMode] = useState<'new' | 'reschedule'>('new')
+  const [result, setResult] = useState<BookingResult | null>(null)
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState('')
 
-  const when = ({ date, slot }) => `${formatDate(date, lang)} ${slot}`
+  const when = ({ date, slot }: { date: string; slot: string }) => `${formatDate(date, lang)} ${slot}`
 
   // The phone number is the visitor's identity: if it already has a booking,
   // show that booking (with the option to change the time) instead of booking again.
-  async function handleDetails(d) {
+  async function handleDetails(d: GuestDetails) {
     setDetails(d)
     setSubmitError('')
     setChecking(true)
-    let existing = []
+    let existing: GuestBooking[] = []
     try {
       existing = await findGuestBookings(slug, d.phone)
     } catch {
@@ -51,11 +62,11 @@ export default function BookingPage({ slug }) {
     }
   }
 
-  async function handleConfirm({ dayId, date, slot }) {
+  async function handleConfirm({ dayId, date, slot }: SlotChoice) {
     setSubmitting(true)
     setSubmitError('')
     try {
-      if (mode === 'reschedule') {
+      if (mode === 'reschedule' && result) {
         const guest = { name: result.name, phone: result.phone }
         const { instructions } = await rescheduleBooking(result, dayId, slot, guest)
         setResult({ ...result, dayId, date, slot, instructions, kind: 'rescheduled', previousWhen: when(result) })
@@ -80,7 +91,7 @@ export default function BookingPage({ slug }) {
   }
 
   async function handleCancel() {
-    if (!window.confirm(t.confirmation.confirmCancel(when(result)))) return
+    if (!result || !window.confirm(t.confirmation.confirmCancel(when(result)))) return
     setCancelling(true)
     setCancelError('')
     try {
@@ -95,6 +106,7 @@ export default function BookingPage({ slug }) {
   }
 
   function startNewBooking() {
+    if (!result) return
     setDetails({ name: result.name, phone: result.phone })
     setMode('new')
     setSubmitError('')
@@ -109,7 +121,7 @@ export default function BookingPage({ slug }) {
           <div className="flex items-center justify-center gap-2 py-16 text-slate-500">
             <Spinner /> {t.slots.loading}
           </div>
-        ) : loadError.code === 'propertyNotFound' ? (
+        ) : loadError instanceof BookingError && loadError.code === 'propertyNotFound' ? (
           <Card className="mx-auto max-w-md text-center">
             <h1 className="text-xl font-semibold text-slate-900">{t.noProperty.title}</h1>
             <p className="mt-2 text-slate-500">{t.noProperty.notFound}</p>
@@ -123,7 +135,8 @@ export default function BookingPage({ slug }) {
     )
   }
 
-  const rescheduling = mode === 'reschedule'
+  // The booking being moved, while rescheduling.
+  const rescheduling = mode === 'reschedule' ? result : null
 
   return (
     <div className="space-y-6">
@@ -139,12 +152,11 @@ export default function BookingPage({ slug }) {
       {step === 'pick' && (
         <SlotPicker
           days={property.days}
-          loading={false}
           loadError={loadError}
           submitError={submitError}
           submitting={submitting}
-          name={rescheduling ? result.name : details.name}
-          current={rescheduling ? result : null}
+          name={rescheduling ? rescheduling.name : details.name}
+          current={rescheduling}
           onBack={() => {
             setSubmitError('')
             setStep(rescheduling ? 'done' : 'details')
@@ -153,7 +165,7 @@ export default function BookingPage({ slug }) {
         />
       )}
 
-      {step === 'done' && (
+      {step === 'done' && result && (
         <Confirmation
           result={result}
           cancelling={cancelling}
@@ -167,7 +179,7 @@ export default function BookingPage({ slug }) {
   )
 }
 
-function Stepper({ step }) {
+function Stepper({ step }: { step: number }) {
   const { t } = useI18n()
   const STEPS = t.steps
   const finished = step === STEPS.length - 1

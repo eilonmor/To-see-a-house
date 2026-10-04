@@ -1,8 +1,9 @@
+import type { ReactNode } from 'react'
 import { isConfigured } from '../lib/supabase'
 import { useI18n } from '../i18n/I18nProvider'
 import { LANGUAGES } from '../i18n/translations'
 
-export default function Layout({ isAdmin, children }) {
+export default function Layout({ isAdmin, children }: { isAdmin: boolean; children: ReactNode }) {
   const { t, lang, setLang } = useI18n()
   const otherLang = lang === 'he' ? 'en' : 'he'
 

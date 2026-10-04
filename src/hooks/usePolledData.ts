@@ -6,11 +6,11 @@ import { POLL_INTERVAL_MS } from '../config'
  * and re-fetches immediately when the user returns to the tab. Pass a
  * memoized `load`; a new one restarts loading. With `load` null, nothing loads.
  */
-export function usePolledData(load, initial) {
-  const [data, setData] = useState(initial)
+export function usePolledData<T>(load: (() => Promise<T>) | null, initial: T) {
+  const [data, setData] = useState<T>(initial)
   const [loading, setLoading] = useState(Boolean(load))
-  const [error, setError] = useState(null)
-  const [lastUpdated, setLastUpdated] = useState(null)
+  const [error, setError] = useState<unknown>(null)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const inFlight = useRef(false)
 
   const refresh = useCallback(async () => {
@@ -35,7 +35,9 @@ export function usePolledData(load, initial) {
     const id = setInterval(() => {
       if (document.visibilityState === 'visible') refresh()
     }, POLL_INTERVAL_MS)
-    const onVisible = () => document.visibilityState === 'visible' && refresh()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh()
+    }
     document.addEventListener('visibilitychange', onVisible)
     return () => {
       clearInterval(id)

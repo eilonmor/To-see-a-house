@@ -1,10 +1,12 @@
+import type { Lang } from './i18n/translations'
+
 // ---------------------------------------------------------------------------
 // App configuration.
 // ---------------------------------------------------------------------------
 
 // Default interface language: 'he' (Hebrew, right-to-left) or 'en' (English).
 // Visitors can switch with the toggle in the header; their choice is remembered.
-export const DEFAULT_LANGUAGE = 'he'
+export const DEFAULT_LANGUAGE: Lang = 'he'
 
 // How often (ms) open pages re-fetch bookings.
 export const POLL_INTERVAL_MS = 15000

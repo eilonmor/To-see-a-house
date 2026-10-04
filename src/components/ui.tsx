@@ -1,6 +1,8 @@
 // Small shared UI primitives.
 
-export function Card({ className = '', children }) {
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
+
+export function Card({ className = '', children }: { className?: string; children: ReactNode }) {
   return (
     <div className={`rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8 ${className}`}>
       {children}
@@ -8,7 +10,9 @@ export function Card({ className = '', children }) {
   )
 }
 
-export function Button({ variant = 'primary', className = '', ...props }) {
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' }
+
+export function Button({ variant = 'primary', className = '', ...props }: ButtonProps) {
   const styles = {
     primary: 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-indigo-300',
     secondary: 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 disabled:text-slate-400',
@@ -22,7 +26,9 @@ export function Button({ variant = 'primary', className = '', ...props }) {
   )
 }
 
-export function Field({ label, id, error, dir, ...inputProps }) {
+type FieldProps = InputHTMLAttributes<HTMLInputElement> & { label: string; id: string; error?: string }
+
+export function Field({ label, id, error, dir, ...inputProps }: FieldProps) {
   return (
     <div>
       <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-slate-700">
@@ -47,7 +53,7 @@ export function Field({ label, id, error, dir, ...inputProps }) {
   )
 }
 
-export function Alert({ tone = 'error', children }) {
+export function Alert({ tone = 'error', children }: { tone?: 'error' | 'info'; children: ReactNode }) {
   const styles = {
     error: 'border-rose-200 bg-rose-50 text-rose-700',
     info: 'border-sky-200 bg-sky-50 text-sky-800',
@@ -55,7 +61,7 @@ export function Alert({ tone = 'error', children }) {
   return <div role="alert" className={`rounded-xl border px-4 py-3 text-sm ${styles[tone]}`}>{children}</div>
 }
 
-export function Spinner({ className = 'h-4 w-4' }) {
+export function Spinner({ className = 'h-4 w-4' }: { className?: string }) {
   return (
     <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />

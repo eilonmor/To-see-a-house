@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { formatDate } from '../lib/bookingStore'
+import { formatDate, type PublicDay, type SlotChoice } from '../lib/bookingStore'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Alert, Button, Card, Spinner } from './ui'
 
@@ -8,14 +8,25 @@ import { Alert, Button, Card, Spinner } from './ui'
  * "change time" mode: the visitor's current slot is marked, and nothing
  * changes until they pick a new slot and press the approve button.
  */
-export default function SlotPicker({ days, loading, loadError, submitError, submitting, name, current, onBack, onConfirm }) {
+type Props = {
+  days: PublicDay[]
+  loadError: unknown
+  submitError: string
+  submitting: boolean
+  name: string
+  current: SlotChoice | null
+  onBack: () => void
+  onConfirm: (choice: SlotChoice) => void
+}
+
+export default function SlotPicker({ days, loadError, submitError, submitting, name, current, onBack, onConfirm }: Props) {
   const { t, lang } = useI18n()
   const rescheduling = Boolean(current)
-  const isCurrent = (dayId, slot) => current?.dayId === dayId && current?.slot === slot
-  const freeCount = (day) => day.slots.filter((s) => !day.taken.includes(s) && !isCurrent(day.id, s)).length
+  const isCurrent = (dayId: string, slot: string) => current?.dayId === dayId && current?.slot === slot
+  const freeCount = (day: PublicDay) => day.slots.filter((s) => !day.taken.includes(s) && !isCurrent(day.id, s)).length
 
-  const [dayId, setDayId] = useState(() => current?.dayId ?? null)
-  const [selected, setSelected] = useState(null)
+  const [dayId, setDayId] = useState<string | null>(() => current?.dayId ?? null)
+  const [selected, setSelected] = useState<string | null>(null)
 
   // Default to the first day with a free slot once days have loaded.
   const day = days.find((d) => d.id === dayId) || days.find((d) => freeCount(d) > 0) || days[0]
@@ -25,7 +36,7 @@ export default function SlotPicker({ days, loading, loadError, submitError, subm
     if (selected && (!day || day.taken.includes(selected))) setSelected(null)
   }, [day, selected])
 
-  const when = (slot) => (days.length > 1 ? `${formatDate(day.date, lang)} ${slot}` : slot)
+  const when = (slot: string) => (day && days.length > 1 ? `${formatDate(day.date, lang)} ${slot}` : slot)
   const availableCount = day ? freeCount(day) : 0
 
   let confirmLabel = t.slots.select
@@ -41,7 +52,7 @@ export default function SlotPicker({ days, loading, loadError, submitError, subm
             {t.slots.bookingFor} <span className="font-medium text-slate-700">{name}</span>
           </p>
         </div>
-        {!loading && day && (
+        {day && (
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
             {t.slots.availableOf(availableCount, day.slots.length)}
           </span>
@@ -49,21 +60,17 @@ export default function SlotPicker({ days, loading, loadError, submitError, subm
       </div>
 
       <div className="mt-6 space-y-4">
-        {rescheduling && (
+        {current && (
           <Alert tone="info">{t.slots.rescheduleHint(`${formatDate(current.date, lang)} ${current.slot}`)}</Alert>
         )}
-        {loadError && (
+        {loadError != null && (
           <Alert>
             {t.slots.loadError} {errorText(loadError, t)}
           </Alert>
         )}
         {submitError && <Alert>{submitError}</Alert>}
 
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 py-12 text-slate-500">
-            <Spinner /> {t.slots.loading}
-          </div>
-        ) : !day ? (
+        {!day ? (
           <Alert tone="info">{t.slots.noDays}</Alert>
         ) : availableCount === 0 ? (
           <Alert tone="info">
@@ -71,7 +78,7 @@ export default function SlotPicker({ days, loading, loadError, submitError, subm
           </Alert>
         ) : null}
 
-        {!loading && days.length > 1 && (
+        {day && days.length > 1 && (
           <div role="tablist" aria-label={t.slots.daysLabel} className="flex flex-wrap gap-2">
             {days.map((d) => {
               const active = d.id === day.id
@@ -100,7 +107,7 @@ export default function SlotPicker({ days, loading, loadError, submitError, subm
           </div>
         )}
 
-        {!loading && day && (
+        {day && (
           <div role="radiogroup" aria-label={t.slots.groupLabel} className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {day.slots.map((slot) => {
               const mine = isCurrent(day.id, slot)
@@ -139,7 +146,10 @@ export default function SlotPicker({ days, loading, loadError, submitError, subm
         <Button variant="secondary" onClick={onBack} disabled={submitting}>
           {rescheduling ? t.slots.cancelChange : t.slots.back}
         </Button>
-        <Button onClick={() => onConfirm({ dayId: day.id, date: day.date, slot: selected })} disabled={!selected || submitting}>
+        <Button
+          onClick={() => day && selected && onConfirm({ dayId: day.id, date: day.date, slot: selected })}
+          disabled={!selected || submitting}
+        >
           {submitting && <Spinner />} {confirmLabel}
         </Button>
       </div>
