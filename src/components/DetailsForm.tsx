@@ -1,28 +1,31 @@
-import { useState } from 'react'
+import { useState, type ChangeEvent, type FormEvent } from 'react'
+import { isValidPhone, type GuestDetails } from '../lib/bookingStore'
 import { useI18n } from '../i18n/I18nProvider'
+import type { Translation } from '../i18n/translations'
 import { Button, Card, Field, Spinner } from './ui'
 
-function validate({ name, phone }, t) {
-  const errors = {}
+type Errors = Partial<Record<keyof GuestDetails, string>>
+
+function validate({ name, phone }: GuestDetails, t: Translation): Errors {
+  const errors: Errors = {}
   if (name.trim().length < 2) errors.name = t.details.nameError
-  const digits = phone.replace(/\D/g, '')
-  if (!/^[+\d][\d\s\-()]*$/.test(phone.trim()) || digits.length < 7 || digits.length > 15) {
-    errors.phone = t.details.phoneError
-  }
+  if (!/^[+\d][\d\s\-()]*$/.test(phone.trim()) || !isValidPhone(phone)) errors.phone = t.details.phoneError
   return errors
 }
 
-export default function DetailsForm({ initial, busy, onSubmit }) {
+type Props = { initial: GuestDetails; busy: boolean; onSubmit: (details: GuestDetails) => void }
+
+export default function DetailsForm({ initial, busy, onSubmit }: Props) {
   const { t } = useI18n()
   const [values, setValues] = useState(initial)
-  const [errors, setErrors] = useState({})
+  const [errors, setErrors] = useState<Errors>({})
 
-  const update = (key) => (e) => {
+  const update = (key: keyof GuestDetails) => (e: ChangeEvent<HTMLInputElement>) => {
     setValues((v) => ({ ...v, [key]: e.target.value }))
     if (errors[key]) setErrors((errs) => ({ ...errs, [key]: undefined }))
   }
 
-  function handleSubmit(e) {
+  function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (busy) return
     const errs = validate(values, t)

@@ -1,20 +1,26 @@
-import { useState } from 'react'
-import { ADMIN_PASSWORD } from '../config'
-import { useI18n } from '../i18n/I18nProvider'
-import { Button, Card, Field } from './ui'
+import { useState, type FormEvent } from 'react'
+import { signIn } from '../lib/adminStore'
+import { errorText, useI18n } from '../i18n/I18nProvider'
+import { Button, Card, Field, Spinner } from './ui'
 
-export default function AdminLogin({ onSuccess }) {
+export default function AdminLogin() {
   const { t } = useI18n()
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
 
-  function handleSubmit(e) {
+  // On success, useSession() picks up the new session and shows the dashboard.
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (password === ADMIN_PASSWORD) {
-      onSuccess()
-    } else {
-      setError(t.login.wrong)
+    setBusy(true)
+    setError('')
+    try {
+      await signIn(email, password)
+    } catch (err) {
+      setError(errorText(err, t))
       setPassword('')
+      setBusy(false)
     }
   }
 
@@ -30,11 +36,23 @@ export default function AdminLogin({ onSuccess }) {
       <p className="mt-1 text-center text-sm text-slate-500">{t.login.subtitle}</p>
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         <Field
+          id="email"
+          label={t.login.email}
+          type="email"
+          autoComplete="email"
+          dir="ltr"
+          autoFocus
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value)
+            setError('')
+          }}
+        />
+        <Field
           id="password"
           label={t.login.password}
           type="password"
           autoComplete="current-password"
-          autoFocus
           value={password}
           onChange={(e) => {
             setPassword(e.target.value)
@@ -42,8 +60,8 @@ export default function AdminLogin({ onSuccess }) {
           }}
           error={error}
         />
-        <Button type="submit" className="w-full" disabled={!password}>
-          {t.login.submit}
+        <Button type="submit" className="w-full" disabled={!email || !password || busy}>
+          {busy && <Spinner />} {t.login.submit}
         </Button>
       </form>
     </Card>

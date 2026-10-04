@@ -38,13 +38,13 @@ Migration: [supabase/migrations/20261004000000_init.sql](supabase/migrations/202
 - Tables: `organizations`, `profiles`, `properties`, `property_agents`, `visit_days`, `guests`, `bookings`, `agency_invites`, `otp_requests`.
 - Personal-plan limits, slot validation and no-double-booking are enforced in the database (triggers + unique constraints), so the browser can't bypass them.
 - Row-level security: owners, agency admins and assigned agents manage their properties; guests reach data only through functions that never expose other guests' names or phones.
-- Error codes raised for the UI to translate: `personal_property_limit`, `personal_property_cooldown`, `personal_date_limit`, `date_in_past`, `slot_taken`, `unknown_slot`, `day_closed`, `invalid_phone`, `missing_name`, `invalid_invite`, `already_in_agency`, `not_agency_admin`, `admin_cannot_leave`.
+- Error codes raised for the UI to translate: `personal_property_limit`, `personal_property_cooldown`, `personal_date_limit`, `date_in_past`, `slot_taken`, `booking_not_found`, `unknown_slot`, `day_closed`, `invalid_phone`, `missing_name`, `invalid_invite`, `already_in_agency`, `not_agency_admin`, `admin_cannot_leave`.
 
 ## Phases
 
 1. **Supabase foundation.** Apply the migration. Replace `src/lib/bookingStore.js` with Supabase calls and the fixed `TIME_SLOTS` with `visit_days`. Replace the hard-coded admin password with Supabase login. Import the current jsonbin bookings once.
 2. **Accounts.** Sign-up (personal / agent), login, property list, property and date editor, public `/p/<slug>` page.
-3. **Guest OTP.** Edge functions + SMS/WhatsApp provider + signed token. Revoke anon access to the `book_guest_slot` / `cancel_guest_booking` / `find_guest_bookings` functions.
+3. **Guest OTP.** Edge functions + SMS/WhatsApp provider + signed token. Revoke anon access to the `book_guest_slot` / `reschedule_guest_booking` / `cancel_guest_booking` / `find_guest_bookings` functions.
 4. **Agencies.** Create agency, invite link/code, assign agents, leave/remove agent.
 5. **Payments.** Checkout + webhook edge functions update `subscription_status`. Agents and agencies need an active subscription to create properties; on a lapse, keep their data.
 6. **Launch on Cloudflare.** Must be done before phase 5 goes live (charging users on Vercel Hobby isn't allowed): buy the domain, move hosting from Vercel to Cloudflare Pages, connect the domain, delete `netlify.toml`.

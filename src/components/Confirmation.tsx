@@ -1,15 +1,31 @@
+import { formatDate, type GuestBooking } from '../lib/bookingStore'
 import { useI18n } from '../i18n/I18nProvider'
 import { Alert, Button, Card, Spinner } from './ui'
 
 /**
- * Shows the visitor's booking. `result.kind` is 'booked' (just booked),
- * 'rescheduled' (time just changed), 'existing' (this phone already had a booking)
- * or 'cancelled' (the visitor just cancelled it).
+ * The visitor's booking. `kind` is 'booked' (just booked), 'rescheduled' (time
+ * just changed), 'existing' (this phone already had a booking) or 'cancelled'
+ * (the visitor just cancelled it). `previousWhen` is the old date and time
+ * after a reschedule.
  */
-export default function Confirmation({ result, instructions, cancelling, cancelError, onChangeTime, onCancel, onBookAgain }) {
-  const { t } = useI18n()
-  const { slot, name, phone, kind, previousSlot } = result
-  const copy = t.confirmation[kind]
+export type BookingResult = GuestBooking & {
+  phone: string
+  kind: 'booked' | 'rescheduled' | 'existing' | 'cancelled'
+  previousWhen?: string
+}
+
+type Props = {
+  result: BookingResult
+  cancelling: boolean
+  cancelError: string
+  onChangeTime: () => void
+  onCancel: () => void
+  onBookAgain: () => void
+}
+
+export default function Confirmation({ result, cancelling, cancelError, onChangeTime, onCancel, onBookAgain }: Props) {
+  const { t, lang } = useI18n()
+  const { date, slot, name, phone, instructions, kind, previousWhen = '' } = result
 
   if (kind === 'cancelled') {
     return (
@@ -19,8 +35,8 @@ export default function Confirmation({ result, instructions, cancelling, cancelE
             <path d="M6 6l12 12M18 6L6 18" />
           </svg>
         </div>
-        <h2 className="mt-5 text-2xl font-bold text-slate-900">{copy.title}</h2>
-        <p className="mt-2 text-slate-500">{copy.body(name, slot)}</p>
+        <h2 className="mt-5 text-2xl font-bold text-slate-900">{t.confirmation.cancelled.title}</h2>
+        <p className="mt-2 text-slate-500">{t.confirmation.cancelled.body(name, `${formatDate(date, lang)} ${slot}`)}</p>
         <Button variant="secondary" className="mt-6 w-full" onClick={onBookAgain}>
           {t.confirmation.bookAgain}
         </Button>
@@ -28,6 +44,7 @@ export default function Confirmation({ result, instructions, cancelling, cancelE
     )
   }
 
+  const copy = t.confirmation[kind]
   return (
     <Card className="mx-auto max-w-md text-center">
       <div
@@ -47,9 +64,13 @@ export default function Confirmation({ result, instructions, cancelling, cancelE
         )}
       </div>
       <h2 className="mt-5 text-2xl font-bold text-slate-900">{copy.title}</h2>
-      <p className="mt-2 text-slate-500">{copy.body(name, previousSlot)}</p>
+      <p className="mt-2 text-slate-500">{copy.body(name, previousWhen)}</p>
 
       <dl className="mt-6 divide-y divide-slate-100 rounded-xl border border-slate-200 bg-slate-50 text-start text-sm">
+        <div className="flex justify-between px-4 py-3">
+          <dt className="text-slate-500">{t.confirmation.date}</dt>
+          <dd className="font-semibold text-slate-900">{formatDate(date, lang, { weekday: 'long', day: 'numeric', month: 'long' })}</dd>
+        </div>
         <div className="flex justify-between px-4 py-3">
           <dt className="text-slate-500">{t.confirmation.time}</dt>
           <dd className="font-semibold text-slate-900">{slot}</dd>
@@ -92,7 +113,7 @@ export default function Confirmation({ result, instructions, cancelling, cancelE
 }
 
 // Renders plain text with any http(s) links made clickable (e.g. a Waze or Maps link).
-function Linkified({ text }) {
+function Linkified({ text }: { text: string }) {
   return text.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
     i % 2 === 1 ? (
       <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="font-medium text-indigo-600 underline" dir="ltr">

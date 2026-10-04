@@ -499,13 +499,15 @@ as $$
   where p.public_slug = p_slug
 $$;
 
--- The guest's upcoming bookings for a property.
+-- The guest's upcoming bookings for a property, with the instructions they
+-- were shown after booking.
 create function public.find_guest_bookings(p_slug text, p_phone text) returns jsonb
 language sql stable security definer set search_path = ''
 as $$
   select coalesce(jsonb_agg(jsonb_build_object(
-    'day_id', d.id, 'date', d.date, 'slot', b.slot, 'name', b.guest_name
-  ) order by d.date), '[]'::jsonb)
+    'day_id', d.id, 'date', d.date, 'slot', b.slot, 'name', b.guest_name,
+    'instructions', p.instructions
+  ) order by d.date, b.slot), '[]'::jsonb)
   from public.bookings b
   join public.visit_days d on d.id = b.visit_day_id
   join public.properties p on p.id = d.property_id
@@ -567,6 +569,28 @@ language sql security definer set search_path = ''
 as $$
   delete from public.bookings
   where visit_day_id = p_day_id and guest_phone_key = public.phone_key(p_phone)
+$$;
+
+-- Moves the guest's booking from one day to a slot on another (or the same)
+-- day. Runs as one transaction: if the new slot can't be booked, the old
+-- booking is kept; the guest never ends up with both or neither.
+-- The old booking is deleted first: a concurrent reschedule of the same
+-- booking waits on its row lock and then finds nothing to move.
+create function public.reschedule_guest_booking(
+  p_from_day_id uuid, p_to_day_id uuid, p_slot time, p_name text, p_phone text
+) returns jsonb
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  if p_from_day_id <> p_to_day_id then
+    delete from public.bookings
+    where visit_day_id = p_from_day_id and guest_phone_key = public.phone_key(p_phone);
+    if not found then
+      raise exception 'booking_not_found';
+    end if;
+  end if;
+  return public.book_guest_slot(p_to_day_id, p_slot, p_name, p_phone);
+end
 $$;
 
 -- ===========================================================================
@@ -681,5 +705,6 @@ grant execute on function
   public.get_public_property(text),
   public.find_guest_bookings(text, text),
   public.book_guest_slot(uuid, time, text, text),
-  public.cancel_guest_booking(uuid, text)
+  public.cancel_guest_booking(uuid, text),
+  public.reschedule_guest_booking(uuid, uuid, time, text, text)
 to anon, authenticated;
