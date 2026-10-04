@@ -45,11 +45,14 @@ export default function BookingPage({ slug }: { slug: string }) {
     setDetails(d)
     setSubmitError('')
     setChecking(true)
-    let existing: GuestBooking[] = []
+    let existing: GuestBooking[]
     try {
       existing = await findGuestBookings(slug, d.phone)
-    } catch {
-      // Continue to the slots; the database still allows one booking per phone per day.
+    } catch (err) {
+      // Stop here: booking without knowing about an existing booking would
+      // silently move it (the database moves a phone's booking within a day).
+      setSubmitError(`${t.details.lookupError} ${errorText(err, t)}`)
+      return
     } finally {
       setChecking(false)
     }
@@ -147,7 +150,16 @@ export default function BookingPage({ slug }: { slug: string }) {
 
       <Stepper step={STEP_INDEX[step]} />
 
-      {step === 'details' && <DetailsForm initial={details} busy={checking} onSubmit={handleDetails} />}
+      {step === 'details' && (
+        <>
+          {submitError && (
+            <div className="mx-auto max-w-md">
+              <Alert>{submitError}</Alert>
+            </div>
+          )}
+          <DetailsForm initial={details} busy={checking} onSubmit={handleDetails} />
+        </>
+      )}
 
       {step === 'pick' && (
         <SlotPicker

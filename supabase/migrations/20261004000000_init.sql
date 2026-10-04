@@ -571,6 +571,25 @@ as $$
   where visit_day_id = p_day_id and guest_phone_key = public.phone_key(p_phone)
 $$;
 
+-- Moves the guest's booking from one day to a slot on another (or the same)
+-- day. Runs as one transaction: if the new slot can't be booked, the old
+-- booking is kept; the guest never ends up with both or neither.
+create function public.reschedule_guest_booking(
+  p_from_day_id uuid, p_to_day_id uuid, p_slot time, p_name text, p_phone text
+) returns jsonb
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  result jsonb;
+begin
+  result := public.book_guest_slot(p_to_day_id, p_slot, p_name, p_phone);
+  if p_from_day_id <> p_to_day_id then
+    perform public.cancel_guest_booking(p_from_day_id, p_phone);
+  end if;
+  return result;
+end
+$$;
+
 -- ===========================================================================
 -- Row Level Security
 -- ===========================================================================
@@ -683,5 +702,6 @@ grant execute on function
   public.get_public_property(text),
   public.find_guest_bookings(text, text),
   public.book_guest_slot(uuid, time, text, text),
-  public.cancel_guest_booking(uuid, text)
+  public.cancel_guest_booking(uuid, text),
+  public.reschedule_guest_booking(uuid, uuid, time, text, text)
 to anon, authenticated;

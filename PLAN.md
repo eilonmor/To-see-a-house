@@ -44,7 +44,7 @@ Migration: [supabase/migrations/20261004000000_init.sql](supabase/migrations/202
 
 1. **Supabase foundation.** Apply the migration. Replace `src/lib/bookingStore.js` with Supabase calls and the fixed `TIME_SLOTS` with `visit_days`. Replace the hard-coded admin password with Supabase login. Import the current jsonbin bookings once.
 2. **Accounts.** Sign-up (personal / agent), login, property list, property and date editor, public `/p/<slug>` page.
-3. **Guest OTP.** Edge functions + SMS/WhatsApp provider + signed token. Revoke anon access to the `book_guest_slot` / `cancel_guest_booking` / `find_guest_bookings` functions.
+3. **Guest OTP.** Edge functions + SMS/WhatsApp provider + signed token. Revoke anon access to the `book_guest_slot` / `reschedule_guest_booking` / `cancel_guest_booking` / `find_guest_bookings` functions.
 4. **Agencies.** Create agency, invite link/code, assign agents, leave/remove agent.
 5. **Payments.** Checkout + webhook edge functions update `subscription_status`. Agents and agencies need an active subscription to create properties; on a lapse, keep their data.
 6. **Launch on Cloudflare.** Must be done before phase 5 goes live (charging users on Vercel Hobby isn't allowed): buy the domain, move hosting from Vercel to Cloudflare Pages, connect the domain, delete `netlify.toml`.

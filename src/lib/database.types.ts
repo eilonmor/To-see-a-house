@@ -227,6 +227,10 @@ export type Database = {
         Returns: Json
       }
       cancel_guest_booking: { Args: { p_day_id: string; p_phone: string }; Returns: undefined }
+      reschedule_guest_booking: {
+        Args: { p_from_day_id: string; p_to_day_id: string; p_slot: string; p_name: string; p_phone: string }
+        Returns: Json
+      }
       create_agency: { Args: { p_name: string }; Returns: string }
       create_agency_invite: { Args: Record<PropertyKey, never>; Returns: string }
       accept_agency_invite: { Args: { p_code: string }; Returns: string }

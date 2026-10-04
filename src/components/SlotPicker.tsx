@@ -28,7 +28,8 @@ export default function SlotPicker({ days, loadError, submitError, submitting, n
   const [dayId, setDayId] = useState<string | null>(() => current?.dayId ?? null)
   const [selected, setSelected] = useState<string | null>(null)
 
-  // Default to the first day with a free slot once days have loaded.
+  // Until the visitor picks a day or a slot, show the first day with a free slot.
+  // Picking a slot pins its day, so a refresh can't move the selection to another day.
   const day = days.find((d) => d.id === dayId) || days.find((d) => freeCount(d) > 0) || days[0]
 
   // If the selected slot gets booked by someone else (via polling), clear it.
@@ -124,7 +125,10 @@ export default function SlotPicker({ days, loadError, submitError, submitting, n
                   role="radio"
                   aria-checked={isSelected}
                   disabled={taken || mine || submitting}
-                  onClick={() => setSelected(slot)}
+                  onClick={() => {
+                    setDayId(day.id)
+                    setSelected(slot)
+                  }}
                   className={`relative rounded-xl border px-3 py-3 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${style}`}
                 >
                   <span className={`block text-lg font-semibold ${taken ? 'line-through' : ''}`}>{slot}</span>

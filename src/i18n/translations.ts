@@ -39,6 +39,7 @@ const he = {
     checking: 'בודק…',
     nameError: 'נא להזין שם מלא.',
     phoneError: 'נא להזין מספר טלפון ישראלי תקין.',
+    lookupError: 'לא ניתן לבדוק אם כבר יש לך הזמנה:',
   },
   slots: {
     title: 'בחירת שעה',
@@ -210,6 +211,7 @@ const en: Translation = {
     checking: 'Checking…',
     nameError: 'Please enter your full name.',
     phoneError: 'Please enter a valid Israeli phone number.',
+    lookupError: "Couldn't check whether you already have a booking:",
   },
   slots: {
     title: 'Choose a time',

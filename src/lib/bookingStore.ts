@@ -5,7 +5,9 @@
 // visitors' names or phone numbers.
 
 import type { Lang } from '../i18n/translations'
-import { BookingError, run } from './supabase'
+import type { PostgrestSingleResponse } from '@supabase/supabase-js'
+import type { Json } from './database.types'
+import { BookingError, run, type Db } from './supabase'
 
 export { BookingError } from './supabase'
 
@@ -93,11 +95,18 @@ export async function findGuestBookings(slug: string, phone: string): Promise<Gu
  * Books a slot. If the visitor already has a booking on that day, it moves to
  * the new slot in the same transaction. Returns the property's instructions.
  */
-export async function bookSlot(dayId: string, slot: string, { name, phone }: GuestDetails): Promise<{ instructions: string }> {
+export function bookSlot(dayId: string, slot: string, { name, phone }: GuestDetails): Promise<{ instructions: string }> {
+  return bookingCall(slot, (db) => db.rpc('book_guest_slot', { p_day_id: dayId, p_slot: slot, p_name: name, p_phone: phone }))
+}
+
+// Runs a booking function and returns its instructions; errors name the slot
+// so the UI can say which one was taken.
+async function bookingCall(
+  slot: string,
+  build: (db: Db) => PromiseLike<PostgrestSingleResponse<Json>>,
+): Promise<{ instructions: string }> {
   try {
-    const data = (await run((db) =>
-      db.rpc('book_guest_slot', { p_day_id: dayId, p_slot: slot, p_name: name, p_phone: phone }),
-    )) as { instructions: string }
+    const data = (await run(build)) as { instructions: string }
     return { instructions: data.instructions }
   } catch (err) {
     if (err instanceof BookingError) err.params = { slot, ...err.params }
@@ -111,17 +120,23 @@ export async function cancelBooking(dayId: string, phone: string): Promise<void>
 }
 
 /**
- * Moves a visitor's booking ({ dayId }) to another slot. On the same day the
- * database moves it in one step; to another day, the new slot is booked first
- * and the old one is freed only after that succeeded.
+ * Moves a visitor's booking ({ dayId }) to a slot on the same or another day,
+ * in one database transaction: if the new slot can't be booked, the current
+ * booking is kept.
  */
-export async function rescheduleBooking(
+export function rescheduleBooking(
   current: { dayId: string },
   dayId: string,
   slot: string,
-  details: GuestDetails,
+  { name, phone }: GuestDetails,
 ): Promise<{ instructions: string }> {
-  const result = await bookSlot(dayId, slot, details)
-  if (current.dayId !== dayId) await cancelBooking(current.dayId, details.phone)
-  return result
+  return bookingCall(slot, (db) =>
+    db.rpc('reschedule_guest_booking', {
+      p_from_day_id: current.dayId,
+      p_to_day_id: dayId,
+      p_slot: slot,
+      p_name: name,
+      p_phone: phone,
+    }),
+  )
 }

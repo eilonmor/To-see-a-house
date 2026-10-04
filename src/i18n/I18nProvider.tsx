@@ -9,7 +9,8 @@ type I18n = { lang: Lang; dir: 'rtl' | 'ltr'; t: Translation; setLang: (lang: La
 
 const I18nContext = createContext<I18n | null>(null)
 
-const isLang = (value: unknown): value is Lang => typeof value === 'string' && value in translations
+// Own keys only: `in` would also accept inherited names such as 'toString'.
+const isLang = (value: unknown): value is Lang => typeof value === 'string' && Object.hasOwn(translations, value)
 
 function initialLanguage(): Lang {
   try {
