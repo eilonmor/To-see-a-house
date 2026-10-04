@@ -1,15 +1,18 @@
+import type { ReactNode } from 'react'
 import { isConfigured } from '../lib/supabase'
 import { useI18n } from '../i18n/I18nProvider'
 import { LANGUAGES } from '../i18n/translations'
 
-export default function Layout({ isAdmin, children }) {
+type Props = { isAdmin: boolean; homeHref: string; children: ReactNode }
+
+export default function Layout({ isAdmin, homeHref, children }: Props) {
   const { t, lang, setLang } = useI18n()
   const otherLang = lang === 'he' ? 'en' : 'he'
 
   return (
     <div className="min-h-screen bg-linear-to-b from-indigo-50 via-slate-50 to-slate-50 text-slate-800">
       <header className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-5">
-        <a href="#/" className="flex items-center gap-2 font-semibold text-slate-900">
+        <a href={homeHref} className="flex items-center gap-2 font-semibold text-slate-900">
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-indigo-600 text-white shadow-sm">
             <HouseIcon />
           </span>
@@ -25,7 +28,7 @@ export default function Layout({ isAdmin, children }) {
             {LANGUAGES[otherLang].label}
           </button>
           {isAdmin ? (
-            <a href="#/" className="text-slate-500 hover:text-slate-800">
+            <a href={homeHref} className="text-slate-500 hover:text-slate-800">
               {t.backToBooking}
             </a>
           ) : (

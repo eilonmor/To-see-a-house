@@ -6,7 +6,9 @@ import { Alert, Button, Card, Spinner } from './ui'
 const MAX_LENGTH = 1000
 
 /** Lets the admin edit the instructions visitors see after booking. */
-export default function InstructionsEditor({ propertyId, instructions, disabled, onSaved }) {
+type Props = { propertyId: string; instructions: string; disabled?: boolean; onSaved: (instructions: string) => void }
+
+export default function InstructionsEditor({ propertyId, instructions, disabled = false, onSaved }: Props) {
   const { t } = useI18n()
   const [draft, setDraft] = useState(instructions)
   // The server value the current draft was based on. While the admin hasn't
@@ -14,7 +16,7 @@ export default function InstructionsEditor({ propertyId, instructions, disabled,
   // typing, their edits are kept.
   const [base, setBase] = useState(instructions)
   const [saving, setSaving] = useState(false)
-  const [status, setStatus] = useState(null) // null | 'saved' | error
+  const [status, setStatus] = useState<'saved' | { error: unknown } | null>(null)
 
   useEffect(() => {
     if (instructions === base) return
@@ -40,7 +42,7 @@ export default function InstructionsEditor({ propertyId, instructions, disabled,
       onSaved(saved)
       setStatus('saved')
     } catch (err) {
-      setStatus(err)
+      setStatus({ error: err })
     } finally {
       setSaving(false)
     }
@@ -82,7 +84,7 @@ export default function InstructionsEditor({ propertyId, instructions, disabled,
       {status && status !== 'saved' && (
         <div className="mt-3">
           <Alert>
-            {t.instructions.saveError} {errorText(status, t)}
+            {t.instructions.saveError} {errorText(status.error, t)}
           </Alert>
         </div>
       )}

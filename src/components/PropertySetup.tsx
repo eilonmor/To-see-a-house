@@ -1,16 +1,18 @@
-import { useState } from 'react'
-import { createProperty } from '../lib/adminStore'
+import { useState, type ChangeEvent, type FormEvent } from 'react'
+import { createProperty, type Property } from '../lib/adminStore'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Alert, Button, Card, Field, Spinner } from './ui'
 
 /** Shown to a logged-in user who has no property yet. */
-export default function PropertySetup({ userId, onCreated }) {
+type Props = { userId: string; onCreated: (property: Property) => void }
+
+export default function PropertySetup({ userId, onCreated }: Props) {
   const { t } = useI18n()
   const [values, setValues] = useState({ title: '', address: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  async function handleSubmit(e) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError('')
@@ -22,7 +24,7 @@ export default function PropertySetup({ userId, onCreated }) {
     }
   }
 
-  const update = (key) => (e) => setValues((v) => ({ ...v, [key]: e.target.value }))
+  const update = (key: keyof typeof values) => (e: ChangeEvent<HTMLInputElement>) => setValues((v) => ({ ...v, [key]: e.target.value }))
 
   return (
     <Card className="mx-auto max-w-md">

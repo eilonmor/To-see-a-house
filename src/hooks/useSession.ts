@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 
 /** The current Supabase auth session: undefined while loading, then a session or null. */
-export function useSession() {
-  const [session, setSession] = useState(supabase ? undefined : null)
+export function useSession(): Session | null | undefined {
+  const [session, setSession] = useState<Session | null | undefined>(supabase ? undefined : null)
 
   useEffect(() => {
     if (!supabase) return

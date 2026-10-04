@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { addDay } from '../lib/adminStore'
 import { israelToday } from '../lib/bookingStore'
 import { errorText, useI18n } from '../i18n/I18nProvider'
@@ -7,18 +7,20 @@ import { Alert, Button, Card, Field, Spinner } from './ui'
 const EMPTY = { date: '', startTime: '17:00', endTime: '18:30', slotMinutes: '10' }
 
 /** Adds an open-house date to the property. */
-export default function AddDayForm({ propertyId, onAdded }) {
+type Props = { propertyId: string; onAdded: () => Promise<void> }
+
+export default function AddDayForm({ propertyId, onAdded }: Props) {
   const { t } = useI18n()
   const [values, setValues] = useState(EMPTY)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  const update = (key) => (e) => {
+  const update = (key: keyof typeof EMPTY) => (e: ChangeEvent<HTMLInputElement>) => {
     setValues((v) => ({ ...v, [key]: e.target.value }))
     setError('')
   }
 
-  async function handleSubmit(e) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (values.endTime <= values.startTime) return setError(t.addDay.endBeforeStart)
     setBusy(true)

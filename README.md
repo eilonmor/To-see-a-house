@@ -1,6 +1,6 @@
 # To See a House: Apartment Viewing Bookings
 
-A React + Tailwind CSS app for booking visits to an apartment viewing, backed by
+A React + TypeScript + Tailwind CSS app for booking visits to an apartment viewing, backed by
 [Supabase](https://supabase.com). Visitors pick a free time slot on a public page.
 The owner logs in to see and manage every booking. See [PLAN.md](PLAN.md) for where
 the project is going.
@@ -67,7 +67,7 @@ npm run dev                    # http://localhost:5173
 Open `/#/admin`, log in, create your property, add a viewing day, and copy the
 visitor link from the dashboard.
 
-`npm run build` writes the static site to `dist/`. `npm run preview` serves that build locally.
+`npm run typecheck` checks the types. `npm run build` checks them too, then writes the static site to `dist/`. `npm run preview` serves that build locally.
 
 ---
 
@@ -113,34 +113,41 @@ The app uses hash routes (`/#/admin`, `/#/p/<slug>`), so you don't need any SPA 
 
 ```
 src/
-├── config.js                  # language, polling, Supabase env vars
-├── App.jsx                    # routes: #/admin, #/p/<slug>, /
+├── config.ts                  # language, polling, Supabase env vars
+├── App.tsx                    # routes: #/admin, #/p/<slug>, /
 ├── i18n/
-│   ├── translations.js        # Hebrew + English texts
-│   └── I18nProvider.jsx       # language state, sets <html lang/dir>, useI18n()
+│   ├── translations.ts        # Hebrew + English texts
+│   └── I18nProvider.tsx       # language state, sets <html lang/dir>, useI18n()
 ├── lib/
-│   ├── supabase.js            # Supabase client, error codes → BookingError
-│   ├── bookingStore.js        # visitor API (database functions), slot/date/phone helpers
-│   └── adminStore.js          # admin API: login, property, days, bookings
+│   ├── supabase.ts            # Supabase client, error codes → BookingError
+│   ├── database.types.ts      # types for the database schema
+│   ├── bookingStore.ts        # visitor API (database functions), slot/date/phone helpers
+│   └── adminStore.ts          # admin API: login, property, days, bookings
 ├── hooks/
-│   ├── usePolledData.js       # loads data and keeps it fresh (polling)
-│   ├── useSession.js          # Supabase auth session
-│   └── useHashRoute.js        # tiny hash router
+│   ├── usePolledData.ts       # loads data and keeps it fresh (polling)
+│   ├── useSession.ts          # Supabase auth session
+│   └── useHashRoute.ts        # tiny hash router
 └── components/
-    ├── Layout.jsx             # header, setup banner
-    ├── ui.jsx                 # Card, Button, Field, Alert, Spinner
-    ├── BookingPage.jsx        # visitor flow: details → slot → confirmation
-    ├── DetailsForm.jsx        # name + phone form with validation
-    ├── SlotPicker.jsx         # day tabs + time-slot grid
-    ├── Confirmation.jsx       # "your booking is registered" screen
-    ├── AdminPage.jsx          # login gate
-    ├── AdminLogin.jsx         # email + password form
-    ├── AdminDashboard.jsx     # share link, bookings per day
-    ├── PropertySetup.jsx      # create the property (first login)
-    ├── AddDayForm.jsx         # add a viewing day
-    └── InstructionsEditor.jsx # post-booking instructions
+    ├── Layout.tsx             # header, setup banner
+    ├── ui.tsx                 # Card, Button, Field, Alert, Spinner
+    ├── BookingPage.tsx        # visitor flow: details → slot → confirmation
+    ├── DetailsForm.tsx        # name + phone form with validation
+    ├── SlotPicker.tsx         # day tabs + time-slot grid
+    ├── Confirmation.tsx       # "your booking is registered" screen
+    ├── AdminPage.tsx          # login gate
+    ├── AdminLogin.tsx         # email + password form
+    ├── AdminDashboard.tsx     # share link, bookings per day
+    ├── PropertySetup.tsx      # create the property (first login)
+    ├── AddDayForm.tsx         # add a viewing day
+    └── InstructionsEditor.tsx # post-booking instructions
 supabase/migrations/           # database schema, rules and row-level security
 scripts/import-jsonbin.mjs     # one-time import of the old jsonbin.io data
+```
+
+After changing the database schema, regenerate [`src/lib/database.types.ts`](src/lib/database.types.ts):
+
+```bash
+npx supabase gen types typescript --project-id <project-ref> > src/lib/database.types.ts
 ```
 
 ---

@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
-import { deleteDay, fetchDays, fetchMyProperty, releaseBooking, signOut } from '../lib/adminStore'
+import type { User } from '@supabase/supabase-js'
+import {
+  deleteDay,
+  fetchDays,
+  fetchMyProperty,
+  releaseBooking,
+  signOut,
+  type AdminBooking,
+  type AdminDay,
+  type Property,
+} from '../lib/adminStore'
 import { formatDate, israelToday } from '../lib/bookingStore'
 import { usePolledData } from '../hooks/usePolledData'
 import { errorText, useI18n } from '../i18n/I18nProvider'
@@ -8,12 +18,12 @@ import InstructionsEditor from './InstructionsEditor'
 import PropertySetup from './PropertySetup'
 import AddDayForm from './AddDayForm'
 
-export default function AdminDashboard({ user }) {
+export default function AdminDashboard({ user }: { user: User }) {
   const { t, lang } = useI18n()
   // undefined while loading, then the user's property or null.
-  const [property, setProperty] = useState(undefined)
-  const [propertyError, setPropertyError] = useState(null)
-  const [busy, setBusy] = useState(null) // id of the booking / day being changed
+  const [property, setProperty] = useState<Property | null | undefined>(undefined)
+  const [propertyError, setPropertyError] = useState<unknown>(null)
+  const [busy, setBusy] = useState<string | null>(null) // id of the booking / day being changed
   const [actionError, setActionError] = useState('')
 
   useEffect(() => {
@@ -21,15 +31,15 @@ export default function AdminDashboard({ user }) {
   }, [])
 
   const propertyId = property?.id
-  const load = useCallback(() => fetchDays(propertyId), [propertyId])
-  const { data: days, loading, error, lastUpdated, refresh } = usePolledData(propertyId ? load : null, [])
+  const load = useCallback(() => fetchDays(propertyId!), [propertyId])
+  const { data: days, loading, error, lastUpdated, refresh } = usePolledData<AdminDay[]>(propertyId ? load : null, [])
 
   const today = israelToday()
   const upcoming = days.filter((d) => d.date >= today)
   const totalSlots = upcoming.reduce((n, d) => n + d.slots.length, 0)
   const bookedCount = upcoming.reduce((n, d) => n + d.slots.filter((s) => d.bookings[s]).length, 0)
 
-  async function act(id, confirmText, errorPrefix, action) {
+  async function act(id: string, confirmText: string, errorPrefix: string, action: () => Promise<void>) {
     if (!window.confirm(confirmText)) return
     setBusy(id)
     setActionError('')
@@ -43,12 +53,12 @@ export default function AdminDashboard({ user }) {
     }
   }
 
-  const when = (day, slot) => `${formatDate(day.date, lang)} ${slot}`
-  const handleRelease = (day, slot, booking) =>
+  const when = (day: AdminDay, slot: string) => `${formatDate(day.date, lang)} ${slot}`
+  const handleRelease = (day: AdminDay, slot: string, booking: AdminBooking) =>
     act(booking.id, t.dashboard.confirmRelease(when(day, slot), booking.name), t.dashboard.releaseError(when(day, slot)), () =>
       releaseBooking(booking.id),
     )
-  const handleDeleteDay = (day) =>
+  const handleDeleteDay = (day: AdminDay) =>
     act(day.id, t.dashboard.confirmDeleteDay(formatDate(day.date, lang), Object.keys(day.bookings).length), t.dashboard.deleteDayError, () =>
       deleteDay(day.id),
     )
@@ -81,7 +91,7 @@ export default function AdminDashboard({ user }) {
         </div>
       </div>
 
-      {propertyError && (
+      {propertyError != null && (
         <Alert>
           {t.dashboard.loadError} {errorText(propertyError, t)}
         </Alert>
@@ -105,7 +115,7 @@ export default function AdminDashboard({ user }) {
             <Stat label={t.dashboard.available} value={totalSlots - bookedCount} tone="emerald" />
           </div>
 
-          {error && (
+          {error != null && (
             <Alert>
               {t.dashboard.loadError} {errorText(error, t)}
             </Alert>
@@ -136,7 +146,7 @@ export default function AdminDashboard({ user }) {
           <InstructionsEditor
             propertyId={property.id}
             instructions={property.instructions}
-            onSaved={(instructions) => setProperty((p) => ({ ...p, instructions }))}
+            onSaved={(instructions) => setProperty({ ...property, instructions })}
           />
         </>
       )}
@@ -144,7 +154,7 @@ export default function AdminDashboard({ user }) {
   )
 }
 
-function ShareLink({ property }) {
+function ShareLink({ property }: { property: Property }) {
   const { t } = useI18n()
   const [copied, setCopied] = useState(false)
   const url = `${window.location.origin}${window.location.pathname}#/p/${property.public_slug}`
@@ -176,7 +186,15 @@ function ShareLink({ property }) {
   )
 }
 
-function DayTable({ day, archived, busy, onRelease, onDelete }) {
+type DayTableProps = {
+  day: AdminDay
+  archived: boolean
+  busy: string | null
+  onRelease: (day: AdminDay, slot: string, booking: AdminBooking) => void
+  onDelete: (day: AdminDay) => void
+}
+
+function DayTable({ day, archived, busy, onRelease, onDelete }: DayTableProps) {
   const { t, lang } = useI18n()
   const booked = day.slots.filter((s) => day.bookings[s]).length
 
@@ -260,7 +278,7 @@ function DayTable({ day, archived, busy, onRelease, onDelete }) {
   )
 }
 
-function Stat({ label, value, tone = 'slate' }) {
+function Stat({ label, value, tone = 'slate' }: { label: string; value: number; tone?: 'slate' | 'indigo' | 'emerald' }) {
   const color = { slate: 'text-slate-900', indigo: 'text-indigo-600', emerald: 'text-emerald-600' }[tone]
   return (
     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
