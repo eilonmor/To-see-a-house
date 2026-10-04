@@ -56,7 +56,7 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
 
 ## 2. Run locally
 
-Requires Node.js 20+.
+Requires Node.js 22+.
 
 ```bash
 npm install

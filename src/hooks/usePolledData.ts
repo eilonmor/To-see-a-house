@@ -11,11 +11,12 @@ export function usePolledData<T>(load: (() => Promise<T>) | null, initial: T) {
   const [loading, setLoading] = useState(Boolean(load))
   const [error, setError] = useState<unknown>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
-  const inFlight = useRef(false)
+  // The running load, and the one queued to start after it (if any).
+  const inFlight = useRef<Promise<void> | null>(null)
+  const queued = useRef<Promise<void> | null>(null)
 
-  const refresh = useCallback(async () => {
-    if (!load || inFlight.current) return
-    inFlight.current = true
+  const loadOnce = useCallback(async () => {
+    if (!load) return
     try {
       setData(await load())
       setError(null)
@@ -23,10 +24,31 @@ export function usePolledData<T>(load: (() => Promise<T>) | null, initial: T) {
     } catch (err) {
       setError(err)
     } finally {
-      inFlight.current = false
       setLoading(false)
     }
   }, [load])
+
+  // A refresh during a running load can't use that load's result, which may
+  // predate the change the caller just made, so it queues one more load after
+  // it. Further refreshes while that one waits share it.
+  const refresh = useCallback((): Promise<void> => {
+    if (!load) return Promise.resolve()
+    if (queued.current) return queued.current
+    const start = (): Promise<void> => {
+      const p = loadOnce().finally(() => {
+        if (inFlight.current === p) inFlight.current = null
+      })
+      inFlight.current = p
+      return p
+    }
+    if (!inFlight.current) return start()
+    const next = inFlight.current.then(() => {
+      queued.current = null
+      return start()
+    })
+    queued.current = next
+    return next
+  }, [load, loadOnce])
 
   useEffect(() => {
     if (!load) return

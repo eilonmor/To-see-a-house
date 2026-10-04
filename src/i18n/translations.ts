@@ -165,6 +165,7 @@ const he = {
   },
   errors: {
     slotTaken: ({ slot }: ErrorParams) => `השעה ${slot} הוזמנה הרגע על ידי מישהו אחר. נא לבחור שעה אחרת.`,
+    bookingNotFound: () => 'ההזמנה הקודמת כבר לא קיימת. נא לרענן את הדף.',
     unknownSlot: () => 'שעה לא מוכרת.',
     dayClosed: () => 'היום הזה כבר עבר, ואי אפשר להזמין בו.',
     invalidPhone: () => 'נא להזין מספר טלפון ישראלי תקין.',
@@ -337,6 +338,7 @@ const en: Translation = {
   },
   errors: {
     slotTaken: ({ slot }) => `The ${slot} slot was just booked by someone else. Please choose another time.`,
+    bookingNotFound: () => 'Your previous booking no longer exists. Please refresh the page.',
     unknownSlot: () => 'Unknown time slot.',
     dayClosed: () => 'This day has already passed and can no longer be booked.',
     invalidPhone: () => 'Please enter a valid Israeli phone number.',

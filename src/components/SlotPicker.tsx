@@ -80,15 +80,14 @@ export default function SlotPicker({ days, loadError, submitError, submitting, n
         ) : null}
 
         {day && days.length > 1 && (
-          <div role="tablist" aria-label={t.slots.daysLabel} className="flex flex-wrap gap-2">
+          <div role="group" aria-label={t.slots.daysLabel} className="flex flex-wrap gap-2">
             {days.map((d) => {
               const active = d.id === day.id
               return (
                 <button
                   key={d.id}
                   type="button"
-                  role="tab"
-                  aria-selected={active}
+                  aria-pressed={active}
                   disabled={submitting}
                   onClick={() => {
                     setDayId(d.id)
