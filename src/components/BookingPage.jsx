@@ -1,16 +1,18 @@
-import { useState } from 'react'
-import { bookSlot, cancelBooking, fetchRecord, findBookingByPhone, rescheduleBooking, SlotTakenError } from '../lib/bookingStore'
-import { useBookings } from '../hooks/useBookings'
+import { useCallback, useState } from 'react'
+import { bookSlot, cancelBooking, fetchProperty, findGuestBookings, formatDate, rescheduleBooking } from '../lib/bookingStore'
+import { usePolledData } from '../hooks/usePolledData'
 import { errorText, useI18n } from '../i18n/I18nProvider'
+import { Alert, Card, Spinner } from './ui'
 import DetailsForm from './DetailsForm'
 import SlotPicker from './SlotPicker'
 import Confirmation from './Confirmation'
 
 const STEP_INDEX = { details: 0, pick: 1, done: 2 }
 
-export default function BookingPage() {
-  const { t } = useI18n()
-  const { bookings, instructions, setRecord, loading, error: loadError, refresh } = useBookings()
+export default function BookingPage({ slug }) {
+  const { t, lang } = useI18n()
+  const load = useCallback(() => fetchProperty(slug), [slug])
+  const { data: property, loading, error: loadError, refresh } = usePolledData(load, null)
   const [step, setStep] = useState('details')
   const [details, setDetails] = useState({ name: '', phone: '' })
   const [checking, setChecking] = useState(false)
@@ -18,15 +20,13 @@ export default function BookingPage() {
   const [submitError, setSubmitError] = useState('')
   // 'new' = first booking for this phone; 'reschedule' = moving an existing booking.
   const [mode, setMode] = useState('new')
-  // The visitor's booking: { slot, name, phone, kind: 'booked' | 'rescheduled' | 'existing' | 'cancelled', previousSlot? }
+  // The visitor's booking: { dayId, date, slot, name, phone, instructions,
+  //   kind: 'booked' | 'rescheduled' | 'existing' | 'cancelled', previousWhen? }
   const [result, setResult] = useState(null)
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState('')
 
-  function showExisting({ slot, booking }) {
-    setResult({ slot, name: booking.name, phone: booking.phone, kind: 'existing' })
-    setStep('done')
-  }
+  const when = ({ date, slot }) => `${formatDate(date, lang)} ${slot}`
 
   // The phone number is the visitor's identity: if it already has a booking,
   // show that booking (with the option to change the time) instead of booking again.
@@ -34,49 +34,41 @@ export default function BookingPage() {
     setDetails(d)
     setSubmitError('')
     setChecking(true)
-    let latest = bookings
+    let existing = []
     try {
-      const record = await fetchRecord()
-      setRecord(record)
-      latest = record.bookings
+      existing = await findGuestBookings(slug, d.phone)
     } catch {
-      // Fall back to the last loaded data; bookSlot re-checks on the server anyway.
+      // Continue to the slots; the database still allows one booking per phone per day.
     } finally {
       setChecking(false)
     }
-    const existing = findBookingByPhone(latest, d.phone)
-    if (existing) {
-      showExisting(existing)
+    if (existing.length > 0) {
+      setResult({ ...existing[0], phone: d.phone, kind: 'existing' })
+      setStep('done')
     } else {
       setMode('new')
       setStep('pick')
     }
   }
 
-  async function handleConfirm(slot) {
+  async function handleConfirm({ dayId, date, slot }) {
     setSubmitting(true)
     setSubmitError('')
     try {
       if (mode === 'reschedule') {
-        setRecord(await rescheduleBooking(result.phone, slot, { name: result.name }))
-        setResult({ ...result, slot, kind: 'rescheduled', previousSlot: result.slot })
+        const guest = { name: result.name, phone: result.phone }
+        const { instructions } = await rescheduleBooking(result, dayId, slot, guest)
+        setResult({ ...result, dayId, date, slot, instructions, kind: 'rescheduled', previousWhen: when(result) })
       } else {
-        setRecord(await bookSlot(slot, details))
-        setResult({ slot, name: details.name, phone: details.phone, kind: 'booked' })
+        const { instructions } = await bookSlot(dayId, slot, details)
+        setResult({ dayId, date, slot, ...details, instructions, kind: 'booked' })
       }
       setStep('done')
     } catch (err) {
-      if (err.code === 'duplicate') {
-        // Booked from another device in the meantime — show that booking.
-        const record = await fetchRecord().catch(() => null)
-        const existing = record && findBookingByPhone(record.bookings, details.phone)
-        if (record) setRecord(record)
-        if (existing) return showExisting(existing)
-      }
       setSubmitError(errorText(err, t))
-      if (err instanceof SlotTakenError || err.code === 'conflict') refresh()
     } finally {
       setSubmitting(false)
+      refresh()
     }
   }
 
@@ -88,12 +80,13 @@ export default function BookingPage() {
   }
 
   async function handleCancel() {
-    if (!window.confirm(t.confirmation.confirmCancel(result.slot))) return
+    if (!window.confirm(t.confirmation.confirmCancel(when(result)))) return
     setCancelling(true)
     setCancelError('')
     try {
-      setRecord(await cancelBooking(result.phone))
+      await cancelBooking(result.dayId, result.phone)
       setResult({ ...result, kind: 'cancelled' })
+      refresh()
     } catch (err) {
       setCancelError(`${t.confirmation.cancelError} ${errorText(err, t)}`)
     } finally {
@@ -109,13 +102,34 @@ export default function BookingPage() {
     refresh()
   }
 
+  if (!property) {
+    return (
+      <div className="pt-8">
+        {loading || !loadError ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-slate-500">
+            <Spinner /> {t.slots.loading}
+          </div>
+        ) : loadError.code === 'propertyNotFound' ? (
+          <Card className="mx-auto max-w-md text-center">
+            <h1 className="text-xl font-semibold text-slate-900">{t.noProperty.title}</h1>
+            <p className="mt-2 text-slate-500">{t.noProperty.notFound}</p>
+          </Card>
+        ) : (
+          <Alert>
+            {t.slots.loadError} {errorText(loadError, t)}
+          </Alert>
+        )}
+      </div>
+    )
+  }
+
   const rescheduling = mode === 'reschedule'
 
   return (
     <div className="space-y-6">
       <div className="pt-4 text-center">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">{t.event.title}</h1>
-        <p className="mt-2 text-slate-500">{t.event.subtitle}</p>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">{property.title}</h1>
+        <p className="mt-2 text-slate-500">{property.address || t.event.subtitle}</p>
       </div>
 
       <Stepper step={STEP_INDEX[step]} />
@@ -124,13 +138,13 @@ export default function BookingPage() {
 
       {step === 'pick' && (
         <SlotPicker
-          bookings={bookings}
-          loading={loading}
+          days={property.days}
+          loading={false}
           loadError={loadError}
           submitError={submitError}
           submitting={submitting}
           name={rescheduling ? result.name : details.name}
-          currentSlot={rescheduling ? result.slot : null}
+          current={rescheduling ? result : null}
           onBack={() => {
             setSubmitError('')
             setStep(rescheduling ? 'done' : 'details')
@@ -142,7 +156,6 @@ export default function BookingPage() {
       {step === 'done' && (
         <Confirmation
           result={result}
-          instructions={instructions}
           cancelling={cancelling}
           cancelError={cancelError}
           onChangeTime={startReschedule}

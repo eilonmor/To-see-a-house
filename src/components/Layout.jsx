@@ -1,4 +1,4 @@
-import { isDemoMode } from '../lib/bookingStore'
+import { isConfigured } from '../lib/supabase'
 import { useI18n } from '../i18n/I18nProvider'
 import { LANGUAGES } from '../i18n/translations'
 
@@ -36,12 +36,12 @@ export default function Layout({ isAdmin, children }) {
         </div>
       </header>
 
-      {isDemoMode && (
+      {!isConfigured && (
         <div className="mx-auto mb-4 max-w-3xl px-4">
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            <strong>{t.demoBanner.title}</strong> {t.demoBanner.body}{' '}
-            <code className="font-mono">VITE_JSONBIN_BIN_ID</code> {t.demoBanner.and}{' '}
-            <code className="font-mono">VITE_JSONBIN_ACCESS_KEY</code> {t.demoBanner.suffix}
+            <strong>{t.setupBanner.title}</strong> {t.setupBanner.body}{' '}
+            <code className="font-mono">VITE_SUPABASE_URL</code> {t.setupBanner.and}{' '}
+            <code className="font-mono">VITE_SUPABASE_ANON_KEY</code>.
           </div>
         </div>
       )}

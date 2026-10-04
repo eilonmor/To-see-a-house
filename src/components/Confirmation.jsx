@@ -1,3 +1,4 @@
+import { formatDate } from '../lib/bookingStore'
 import { useI18n } from '../i18n/I18nProvider'
 import { Alert, Button, Card, Spinner } from './ui'
 
@@ -6,9 +7,9 @@ import { Alert, Button, Card, Spinner } from './ui'
  * 'rescheduled' (time just changed), 'existing' (this phone already had a booking)
  * or 'cancelled' (the visitor just cancelled it).
  */
-export default function Confirmation({ result, instructions, cancelling, cancelError, onChangeTime, onCancel, onBookAgain }) {
-  const { t } = useI18n()
-  const { slot, name, phone, kind, previousSlot } = result
+export default function Confirmation({ result, cancelling, cancelError, onChangeTime, onCancel, onBookAgain }) {
+  const { t, lang } = useI18n()
+  const { date, slot, name, phone, instructions, kind, previousWhen } = result
   const copy = t.confirmation[kind]
 
   if (kind === 'cancelled') {
@@ -20,7 +21,7 @@ export default function Confirmation({ result, instructions, cancelling, cancelE
           </svg>
         </div>
         <h2 className="mt-5 text-2xl font-bold text-slate-900">{copy.title}</h2>
-        <p className="mt-2 text-slate-500">{copy.body(name, slot)}</p>
+        <p className="mt-2 text-slate-500">{copy.body(name, `${formatDate(date, lang)} ${slot}`)}</p>
         <Button variant="secondary" className="mt-6 w-full" onClick={onBookAgain}>
           {t.confirmation.bookAgain}
         </Button>
@@ -47,9 +48,13 @@ export default function Confirmation({ result, instructions, cancelling, cancelE
         )}
       </div>
       <h2 className="mt-5 text-2xl font-bold text-slate-900">{copy.title}</h2>
-      <p className="mt-2 text-slate-500">{copy.body(name, previousSlot)}</p>
+      <p className="mt-2 text-slate-500">{copy.body(name, previousWhen)}</p>
 
       <dl className="mt-6 divide-y divide-slate-100 rounded-xl border border-slate-200 bg-slate-50 text-start text-sm">
+        <div className="flex justify-between px-4 py-3">
+          <dt className="text-slate-500">{t.confirmation.date}</dt>
+          <dd className="font-semibold text-slate-900">{formatDate(date, lang, { weekday: 'long', day: 'numeric', month: 'long' })}</dd>
+        </div>
         <div className="flex justify-between px-4 py-3">
           <dt className="text-slate-500">{t.confirmation.time}</dt>
           <dd className="font-semibold text-slate-900">{slot}</dd>

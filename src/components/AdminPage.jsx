@@ -1,33 +1,19 @@
-import { useState } from 'react'
+import { useSession } from '../hooks/useSession'
+import { useI18n } from '../i18n/I18nProvider'
 import AdminLogin from './AdminLogin'
 import AdminDashboard from './AdminDashboard'
-
-const SESSION_KEY = 'apartment-viewing-admin'
-
-function readSession() {
-  try {
-    return sessionStorage.getItem(SESSION_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-function writeSession(value) {
-  try {
-    if (value) sessionStorage.setItem(SESSION_KEY, '1')
-    else sessionStorage.removeItem(SESSION_KEY)
-  } catch {
-    // storage unavailable (private mode etc.) — login just won't persist on reload
-  }
-}
+import { Spinner } from './ui'
 
 export default function AdminPage() {
-  const [authed, setAuthed] = useState(readSession)
+  const { t } = useI18n()
+  const session = useSession()
 
-  function setAuth(value) {
-    writeSession(value)
-    setAuthed(value)
+  if (session === undefined) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-16 text-slate-500">
+        <Spinner /> {t.dashboard.loading}
+      </div>
+    )
   }
-
-  return authed ? <AdminDashboard onLogout={() => setAuth(false)} /> : <AdminLogin onSuccess={() => setAuth(true)} />
+  return session ? <AdminDashboard user={session.user} /> : <AdminLogin />
 }

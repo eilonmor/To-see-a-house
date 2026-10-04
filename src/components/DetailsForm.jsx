@@ -1,14 +1,12 @@
 import { useState } from 'react'
+import { isValidPhone } from '../lib/bookingStore'
 import { useI18n } from '../i18n/I18nProvider'
 import { Button, Card, Field, Spinner } from './ui'
 
 function validate({ name, phone }, t) {
   const errors = {}
   if (name.trim().length < 2) errors.name = t.details.nameError
-  const digits = phone.replace(/\D/g, '')
-  if (!/^[+\d][\d\s\-()]*$/.test(phone.trim()) || digits.length < 7 || digits.length > 15) {
-    errors.phone = t.details.phoneError
-  }
+  if (!/^[+\d][\d\s\-()]*$/.test(phone.trim()) || !isValidPhone(phone)) errors.phone = t.details.phoneError
   return errors
 }
 

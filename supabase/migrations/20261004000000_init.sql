@@ -499,13 +499,15 @@ as $$
   where p.public_slug = p_slug
 $$;
 
--- The guest's upcoming bookings for a property.
+-- The guest's upcoming bookings for a property, with the instructions they
+-- were shown after booking.
 create function public.find_guest_bookings(p_slug text, p_phone text) returns jsonb
 language sql stable security definer set search_path = ''
 as $$
   select coalesce(jsonb_agg(jsonb_build_object(
-    'day_id', d.id, 'date', d.date, 'slot', b.slot, 'name', b.guest_name
-  ) order by d.date), '[]'::jsonb)
+    'day_id', d.id, 'date', d.date, 'slot', b.slot, 'name', b.guest_name,
+    'instructions', p.instructions
+  ) order by d.date, b.slot), '[]'::jsonb)
   from public.bookings b
   join public.visit_days d on d.id = b.visit_day_id
   join public.properties p on p.id = d.property_id

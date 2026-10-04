@@ -1,212 +1,100 @@
-// Data layer for bookings.
+// Guest-side data layer: everything a visitor can do without logging in.
 //
-// Bookings are stored as a single JSON document in a jsonbin.io bin:
-//
-//   {
-//     "bookings": { "16:00": { "name": "...", "phone": "...", "createdAt": "..." } },
-//     "instructions": "Free text the admin writes; shown to visitors after booking."
-//   }
-//
-// If no jsonbin.io credentials are configured, the store falls back to the
-// browser's localStorage so the app can be tried out locally ("demo mode").
+// Visitors never read tables directly. They go through security-definer
+// database functions (see supabase/migrations) that never expose other
+// visitors' names or phone numbers.
 
-import { JSONBIN, TIME_SLOTS } from '../config'
+import { BookingError, run } from './supabase'
 
-const API_BASE = 'https://api.jsonbin.io/v3/b'
-const LOCAL_KEY = 'apartment-viewing-bookings'
+export { BookingError } from './supabase'
 
-// jsonbin.io has no atomic "save only if unchanged" write, so two visitors who
-// book within a second of each other can overwrite each other's booking.
-// After saving, we wait this long (so any save that raced ours has landed) and
-// then re-read to make sure our booking is really there.
-const VERIFY_DELAY_MS = 1500
+// Postgres returns times as 'HH:MM:SS'; the app works with 'HH:MM'.
+export const hhmm = (time) => String(time).slice(0, 5)
 
-export const isDemoMode = !JSONBIN.binId || !(JSONBIN.accessKey || JSONBIN.masterKey)
-
-// Errors carry a `code` (+ `params`) so the UI can show them in the active language.
-export class BookingError extends Error {
-  constructor(code, params = {}, message = code) {
-    super(message)
-    this.name = 'BookingError'
-    this.code = code
-    this.params = params
-  }
+const toMinutes = (time) => {
+  const [h, m] = hhmm(time).split(':').map(Number)
+  return h * 60 + m
 }
 
-export class SlotTakenError extends BookingError {
-  constructor(slot) {
-    super('slotTaken', { slot })
-  }
+const fromMinutes = (total) =>
+  `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+
+/** A visit day's slots: from start_time (inclusive) to end_time (exclusive), every slot_minutes. */
+export function daySlots({ start_time, end_time, slot_minutes }) {
+  const slots = []
+  for (let t = toMinutes(start_time); t < toMinutes(end_time); t += slot_minutes) slots.push(fromMinutes(t))
+  return slots
 }
 
-function authHeaders() {
-  // Prefer the scoped Access Key; fall back to the Master Key if that is all we have.
-  return JSONBIN.accessKey
-    ? { 'X-Access-Key': JSONBIN.accessKey }
-    : { 'X-Master-Key': JSONBIN.masterKey }
+/** Today's date in Israel as 'YYYY-MM-DD' (the database decides "past" by this date). */
+export function israelToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(new Date())
 }
 
-function normalize(record) {
-  const bookings = record && typeof record.bookings === 'object' && record.bookings ? record.bookings : {}
-  const instructions = typeof record?.instructions === 'string' ? record.instructions : ''
-  return { bookings, instructions }
+/** Formats a 'YYYY-MM-DD' date for display, day first in both languages, e.g. "Sun 12/10". */
+export function formatDate(date, lang, options = { weekday: 'short', day: 'numeric', month: 'numeric' }) {
+  const locale = lang === 'en' ? 'en-GB' : lang
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString(locale, { ...options, timeZone: 'UTC' })
 }
 
-async function request(url, options) {
-  let res
-  try {
-    res = await fetch(url, options)
-  } catch {
-    throw new BookingError('network')
-  }
-  if (!res.ok) {
-    let detail = ''
-    try {
-      detail = (await res.json()).message || ''
-    } catch {
-      // ignore non-JSON error bodies
-    }
-    throw new BookingError('server', { status: res.status, detail })
-  }
-  return res.json()
-}
-
-async function readRecord() {
-  if (isDemoMode) {
-    try {
-      return normalize(JSON.parse(localStorage.getItem(LOCAL_KEY)))
-    } catch {
-      return normalize(null)
-    }
-  }
-  const data = await request(`${API_BASE}/${JSONBIN.binId}/latest`, {
-    headers: { ...authHeaders(), 'X-Bin-Meta': 'false' },
-    cache: 'no-store',
-  })
-  return normalize(data)
-}
-
-async function writeRecord(record) {
-  if (isDemoMode) {
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(record))
-    return record
-  }
-  await request(`${API_BASE}/${JSONBIN.binId}`, {
-    method: 'PUT',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(record),
-  })
-  return record
-}
-
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-/**
- * Re-reads the data after a write and checks that `slot` is still held by
- * `phone`. If a concurrent save overwrote ours, throws SlotTakenError (someone
- * else now holds the slot) or a 'conflict' error (the slot is free again), so
- * the visitor is never told they're booked when they aren't.
- */
-async function verifyBooking(slot, phone) {
-  if (isDemoMode) return readRecord()
-  await wait(VERIFY_DELAY_MS)
-  const record = await readRecord()
-  const booking = record.bookings[slot]
-  if (booking && phoneKey(booking.phone) === phoneKey(phone)) return record
-  if (booking) throw new SlotTakenError(slot)
-  throw new BookingError('conflict')
-}
-
-/** Returns the current record: { bookings: { [slot]: { name, phone, createdAt } }, instructions } */
-export function fetchRecord() {
-  return readRecord()
-}
-
-// The phone number is the visitor's identity: one booking per number.
-// Compare digits only, and treat the Israeli +972 prefix like a leading 0,
+// The phone number is the visitor's identity. Same rule as public.phone_key()
+// in the database: digits only, and the Israeli +972 prefix counts as a leading 0,
 // so "050-123-4567" and "+972 50 123 4567" are the same visitor.
 export function phoneKey(phone) {
   const digits = String(phone).replace(/\D/g, '')
   return digits.startsWith('972') ? `0${digits.slice(3)}` : digits
 }
 
-/** Finds a visitor's booking by phone: { slot, booking } or null. */
-export function findBookingByPhone(bookings, phone) {
-  const key = phoneKey(phone)
-  const entry = Object.entries(bookings).find(([, b]) => phoneKey(b.phone) === key)
-  return entry ? { slot: entry[0], booking: entry[1] } : null
-}
+/** Israeli numbers only (landline or mobile), the format the database accepts. */
+export const isValidPhone = (phone) => /^0\d{8,9}$/.test(phoneKey(phone))
 
 /**
- * Books a slot. Re-reads the latest data right before writing so a slot that
- * was taken in the meantime is rejected instead of overwritten.
+ * Loads a property's public page:
+ * { id, title, address, days: [{ id, date, slots: ['17:00', ...], taken: ['17:10', ...] }] }
  */
-export async function bookSlot(slot, { name, phone }) {
-  if (!TIME_SLOTS.includes(slot)) throw new BookingError('unknownSlot')
-
-  const record = await readRecord()
-  if (record.bookings[slot]) throw new SlotTakenError(slot)
-
-  const existing = findBookingByPhone(record.bookings, phone)
-  if (existing) throw new BookingError('duplicate', { slot: existing.slot })
-
-  const next = {
-    ...record,
-    bookings: {
-      ...record.bookings,
-      [slot]: { name: name.trim(), phone: phone.trim(), createdAt: new Date().toISOString() },
-    },
+export async function fetchProperty(slug) {
+  const data = await run((db) => db.rpc('get_public_property', { p_slug: slug }))
+  if (!data) throw new BookingError('propertyNotFound')
+  return {
+    ...data,
+    days: data.days.map((d) => ({ id: d.id, date: d.date, slots: daySlots(d), taken: d.taken.map(hhmm) })),
   }
-  await writeRecord(next)
-  return verifyBooking(slot, phone)
+}
+
+/** The visitor's upcoming bookings for a property: [{ dayId, date, slot, name, instructions }] */
+export async function findGuestBookings(slug, phone) {
+  const rows = await run((db) => db.rpc('find_guest_bookings', { p_slug: slug, p_phone: phone }))
+  return rows.map((b) => ({ dayId: b.day_id, date: b.date, slot: hhmm(b.slot), name: b.name, instructions: b.instructions }))
 }
 
 /**
- * Moves a visitor's booking (found by phone) to a new slot and frees the old
- * one in the same write. If the booking no longer exists (e.g. the admin
- * released it), the visitor is simply booked into the new slot.
+ * Books a slot. If the visitor already has a booking on that day, it moves to
+ * the new slot in the same transaction. Returns the property's instructions.
  */
-export async function rescheduleBooking(phone, newSlot, { name } = {}) {
-  if (!TIME_SLOTS.includes(newSlot)) throw new BookingError('unknownSlot')
-
-  const record = await readRecord()
-  const existing = findBookingByPhone(record.bookings, phone)
-  if (existing?.slot === newSlot) return record
-  if (record.bookings[newSlot]) throw new SlotTakenError(newSlot)
-
-  const bookings = { ...record.bookings }
-  const now = new Date().toISOString()
-  if (existing) {
-    delete bookings[existing.slot]
-    bookings[newSlot] = { ...existing.booking, updatedAt: now }
-  } else {
-    bookings[newSlot] = { name: (name || '').trim(), phone: phone.trim(), createdAt: now }
+export async function bookSlot(dayId, slot, { name, phone }) {
+  try {
+    const data = await run((db) =>
+      db.rpc('book_guest_slot', { p_day_id: dayId, p_slot: slot, p_name: name, p_phone: phone }),
+    )
+    return { instructions: data.instructions }
+  } catch (err) {
+    err.params = { slot, ...err.params }
+    throw err
   }
-  await writeRecord({ ...record, bookings })
-  return verifyBooking(newSlot, phone)
 }
 
 /**
- * Cancels a visitor's booking (found by phone), making its slot available
- * again. Does nothing if the booking no longer exists.
+ * Moves a visitor's booking ({ dayId }) to another slot. On the same day the
+ * database moves it in one step; to another day, the new slot is booked first
+ * and the old one is freed only after that succeeded.
  */
-export async function cancelBooking(phone) {
-  const record = await readRecord()
-  const existing = findBookingByPhone(record.bookings, phone)
-  if (!existing) return record
-  const { [existing.slot]: _removed, ...rest } = record.bookings
-  return writeRecord({ ...record, bookings: rest })
+export async function rescheduleBooking(current, dayId, slot, details) {
+  const result = await bookSlot(dayId, slot, details)
+  if (current.dayId !== dayId) await cancelBooking(current.dayId, details.phone)
+  return result
 }
 
-/** Removes the booking for a slot, making it available again. */
-export async function releaseSlot(slot) {
-  const record = await readRecord()
-  const { [slot]: _removed, ...rest } = record.bookings
-  return writeRecord({ ...record, bookings: rest })
-}
-
-/** Saves the admin's instructions shown to visitors after they book. */
-export async function saveInstructions(text) {
-  const record = await readRecord()
-  return writeRecord({ ...record, instructions: text.trim() })
+/** Cancels the visitor's booking on a day. Does nothing if there is none. */
+export async function cancelBooking(dayId, phone) {
+  await run((db) => db.rpc('cancel_guest_booking', { p_day_id: dayId, p_phone: phone }))
 }

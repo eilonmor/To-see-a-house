@@ -1,25 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchRecord } from '../lib/bookingStore'
 import { POLL_INTERVAL_MS } from '../config'
 
-const EMPTY = { bookings: {}, instructions: '' }
-
 /**
- * Loads bookings (and the admin's visitor instructions) and keeps them fresh: polls while the tab is visible and
- * re-fetches immediately when the user returns to the tab.
+ * Loads data with `load()` and keeps it fresh: polls while the tab is visible
+ * and re-fetches immediately when the user returns to the tab. Pass a
+ * memoized `load`; a new one restarts loading. With `load` null, nothing loads.
  */
-export function useBookings() {
-  const [record, setRecord] = useState(EMPTY)
-  const [loading, setLoading] = useState(true)
+export function usePolledData(load, initial) {
+  const [data, setData] = useState(initial)
+  const [loading, setLoading] = useState(Boolean(load))
   const [error, setError] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
   const inFlight = useRef(false)
 
   const refresh = useCallback(async () => {
-    if (inFlight.current) return
+    if (!load || inFlight.current) return
     inFlight.current = true
     try {
-      setRecord(await fetchRecord())
+      setData(await load())
       setError(null)
       setLastUpdated(new Date())
     } catch (err) {
@@ -28,9 +26,11 @@ export function useBookings() {
       inFlight.current = false
       setLoading(false)
     }
-  }, [])
+  }, [load])
 
   useEffect(() => {
+    if (!load) return
+    setLoading(true)
     refresh()
     const id = setInterval(() => {
       if (document.visibilityState === 'visible') refresh()
@@ -41,8 +41,7 @@ export function useBookings() {
       clearInterval(id)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [refresh])
+  }, [load, refresh])
 
-  const { bookings, instructions } = record
-  return { bookings, instructions, setRecord, loading, error, lastUpdated, refresh }
+  return { data, setData, loading, error, lastUpdated, refresh }
 }

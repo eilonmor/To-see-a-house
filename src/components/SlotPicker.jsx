@@ -1,28 +1,36 @@
 import { useEffect, useState } from 'react'
-import { TIME_SLOTS } from '../config'
+import { formatDate } from '../lib/bookingStore'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Alert, Button, Card, Spinner } from './ui'
 
 /**
- * Time-slot grid. With `currentSlot` set it works in "change time" mode: the
- * visitor's current slot is marked, and nothing changes until they pick a new
- * slot and press the approve button.
+ * Day tabs + time-slot grid. With `current` ({ dayId, slot }) set it works in
+ * "change time" mode: the visitor's current slot is marked, and nothing
+ * changes until they pick a new slot and press the approve button.
  */
-export default function SlotPicker({ bookings, loading, loadError, submitError, submitting, name, currentSlot, onBack, onConfirm }) {
-  const { t } = useI18n()
+export default function SlotPicker({ days, loading, loadError, submitError, submitting, name, current, onBack, onConfirm }) {
+  const { t, lang } = useI18n()
+  const rescheduling = Boolean(current)
+  const isCurrent = (dayId, slot) => current?.dayId === dayId && current?.slot === slot
+  const freeCount = (day) => day.slots.filter((s) => !day.taken.includes(s) && !isCurrent(day.id, s)).length
+
+  const [dayId, setDayId] = useState(() => current?.dayId ?? null)
   const [selected, setSelected] = useState(null)
-  const rescheduling = Boolean(currentSlot)
+
+  // Default to the first day with a free slot once days have loaded.
+  const day = days.find((d) => d.id === dayId) || days.find((d) => freeCount(d) > 0) || days[0]
 
   // If the selected slot gets booked by someone else (via polling), clear it.
   useEffect(() => {
-    if (selected && bookings[selected]) setSelected(null)
-  }, [bookings, selected])
+    if (selected && (!day || day.taken.includes(selected))) setSelected(null)
+  }, [day, selected])
 
-  const availableCount = TIME_SLOTS.filter((s) => !bookings[s] && s !== currentSlot).length
+  const when = (slot) => (days.length > 1 ? `${formatDate(day.date, lang)} ${slot}` : slot)
+  const availableCount = day ? freeCount(day) : 0
 
   let confirmLabel = t.slots.select
   if (submitting) confirmLabel = t.slots.submitting
-  else if (selected) confirmLabel = rescheduling ? t.slots.approveChange(selected) : t.slots.confirm(selected)
+  else if (selected) confirmLabel = rescheduling ? t.slots.approveChange(when(selected)) : t.slots.confirm(when(selected))
 
   return (
     <Card>
@@ -33,15 +41,17 @@ export default function SlotPicker({ bookings, loading, loadError, submitError, 
             {t.slots.bookingFor} <span className="font-medium text-slate-700">{name}</span>
           </p>
         </div>
-        {!loading && (
+        {!loading && day && (
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-            {t.slots.availableOf(availableCount, TIME_SLOTS.length)}
+            {t.slots.availableOf(availableCount, day.slots.length)}
           </span>
         )}
       </div>
 
       <div className="mt-6 space-y-4">
-        {rescheduling && <Alert tone="info">{t.slots.rescheduleHint(currentSlot)}</Alert>}
+        {rescheduling && (
+          <Alert tone="info">{t.slots.rescheduleHint(`${formatDate(current.date, lang)} ${current.slot}`)}</Alert>
+        )}
         {loadError && (
           <Alert>
             {t.slots.loadError} {errorText(loadError, t)}
@@ -53,18 +63,51 @@ export default function SlotPicker({ bookings, loading, loadError, submitError, 
           <div className="flex items-center justify-center gap-2 py-12 text-slate-500">
             <Spinner /> {t.slots.loading}
           </div>
+        ) : !day ? (
+          <Alert tone="info">{t.slots.noDays}</Alert>
         ) : availableCount === 0 ? (
-          <Alert tone="info">{rescheduling ? t.slots.noOtherSlots : t.slots.fullyBooked}</Alert>
+          <Alert tone="info">
+            {days.length > 1 ? t.slots.dayFull : rescheduling ? t.slots.noOtherSlots : t.slots.fullyBooked}
+          </Alert>
         ) : null}
 
-        {!loading && (
+        {!loading && days.length > 1 && (
+          <div role="tablist" aria-label={t.slots.daysLabel} className="flex flex-wrap gap-2">
+            {days.map((d) => {
+              const active = d.id === day.id
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  disabled={submitting}
+                  onClick={() => {
+                    setDayId(d.id)
+                    setSelected(null)
+                  }}
+                  className={`rounded-xl border px-4 py-2 text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                    active ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-indigo-50'
+                  }`}
+                >
+                  <span className="block font-semibold">{formatDate(d.date, lang)}</span>
+                  <span className={`block text-xs ${active ? 'text-indigo-100' : 'text-slate-500'}`}>
+                    {t.slots.freeCount(freeCount(d))}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {!loading && day && (
           <div role="radiogroup" aria-label={t.slots.groupLabel} className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {TIME_SLOTS.map((slot) => {
-              const isCurrent = slot === currentSlot
-              const taken = !isCurrent && Boolean(bookings[slot])
+            {day.slots.map((slot) => {
+              const mine = isCurrent(day.id, slot)
+              const taken = !mine && day.taken.includes(slot)
               const isSelected = selected === slot
               let style = 'border-slate-300 bg-white text-slate-800 hover:border-indigo-400 hover:bg-indigo-50'
-              if (isCurrent) style = 'cursor-not-allowed border-amber-300 bg-amber-50 text-amber-900'
+              if (mine) style = 'cursor-not-allowed border-amber-300 bg-amber-50 text-amber-900'
               else if (taken) style = 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
               else if (isSelected) style = 'border-indigo-600 bg-indigo-600 text-white shadow-md'
               return (
@@ -73,17 +116,17 @@ export default function SlotPicker({ bookings, loading, loadError, submitError, 
                   type="button"
                   role="radio"
                   aria-checked={isSelected}
-                  disabled={taken || isCurrent || submitting}
+                  disabled={taken || mine || submitting}
                   onClick={() => setSelected(slot)}
                   className={`relative rounded-xl border px-3 py-3 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${style}`}
                 >
                   <span className={`block text-lg font-semibold ${taken ? 'line-through' : ''}`}>{slot}</span>
                   <span
                     className={`block text-xs ${
-                      isCurrent ? 'text-amber-700' : isSelected ? 'text-indigo-100' : taken ? 'text-slate-400' : 'text-emerald-600'
+                      mine ? 'text-amber-700' : isSelected ? 'text-indigo-100' : taken ? 'text-slate-400' : 'text-emerald-600'
                     }`}
                   >
-                    {isCurrent ? t.slots.current : taken ? t.slots.booked : isSelected ? t.slots.selected : t.slots.available}
+                    {mine ? t.slots.current : taken ? t.slots.booked : isSelected ? t.slots.selected : t.slots.available}
                   </span>
                 </button>
               )
@@ -96,7 +139,7 @@ export default function SlotPicker({ bookings, loading, loadError, submitError, 
         <Button variant="secondary" onClick={onBack} disabled={submitting}>
           {rescheduling ? t.slots.cancelChange : t.slots.back}
         </Button>
-        <Button onClick={() => onConfirm(selected)} disabled={!selected || submitting}>
+        <Button onClick={() => onConfirm({ dayId: day.id, date: day.date, slot: selected })} disabled={!selected || submitting}>
           {submitting && <Spinner />} {confirmLabel}
         </Button>
       </div>

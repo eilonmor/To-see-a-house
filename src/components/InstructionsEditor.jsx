@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { saveInstructions } from '../lib/bookingStore'
+import { saveInstructions } from '../lib/adminStore'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Alert, Button, Card, Spinner } from './ui'
 
 const MAX_LENGTH = 1000
 
 /** Lets the admin edit the instructions visitors see after booking. */
-export default function InstructionsEditor({ instructions, disabled, onSaved }) {
+export default function InstructionsEditor({ propertyId, instructions, disabled, onSaved }) {
   const { t } = useI18n()
   const [draft, setDraft] = useState(instructions)
   // The server value the current draft was based on. While the admin hasn't
@@ -34,10 +34,10 @@ export default function InstructionsEditor({ instructions, disabled, onSaved }) 
     setSaving(true)
     setStatus(null)
     try {
-      const record = await saveInstructions(draft)
-      setDraft(record.instructions)
-      setBase(record.instructions)
-      onSaved(record)
+      const saved = await saveInstructions(propertyId, draft)
+      setDraft(saved)
+      setBase(saved)
+      onSaved(saved)
       setStatus('saved')
     } catch (err) {
       setStatus(err)
