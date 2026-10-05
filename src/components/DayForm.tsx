@@ -29,6 +29,11 @@ export default function DayForm({ idPrefix, initial, disabled = false, onSubmit,
     setError('')
   }
 
+  const setTime = (key: 'startTime' | 'endTime') => (time: string) => {
+    setValues((v) => ({ ...v, [key]: time }))
+    setError('')
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (values.endTime <= values.startTime) return setError(t.addDay.endBeforeStart)
@@ -48,8 +53,8 @@ export default function DayForm({ idPrefix, initial, disabled = false, onSubmit,
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4 sm:grid-cols-4">
       <Field id={id('date')} label={t.addDay.date} type="date" min={israelToday()} value={values.date} onChange={update('date')} disabled={disabled} required />
-      <Field id={id('start')} label={t.addDay.start} type="time" value={values.startTime} onChange={update('startTime')} disabled={disabled} required />
-      <Field id={id('end')} label={t.addDay.end} type="time" value={values.endTime} onChange={update('endTime')} disabled={disabled} required />
+      <TimeField id={id('start')} label={t.addDay.start} value={values.startTime} onChange={setTime('startTime')} disabled={disabled} />
+      <TimeField id={id('end')} label={t.addDay.end} value={values.endTime} onChange={setTime('endTime')} disabled={disabled} />
       <Field
         id={id('minutes')}
         label={t.addDay.minutes}
@@ -78,5 +83,46 @@ export default function DayForm({ idPrefix, initial, disabled = false, onSubmit,
         </Button>
       </div>
     </form>
+  )
+}
+
+const HOURS = Array.from({ length: 24 }, (_, h) => String(h).padStart(2, '0'))
+const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'))
+
+const selectClass =
+  'block w-full rounded-xl border border-slate-300 bg-white px-2 py-2.5 text-center text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50'
+
+/**
+ * A 24-hour 'HH:MM' picker. <input type="time"> follows the device's clock
+ * format (AM/PM on many), so hours and minutes are two selects instead.
+ */
+function TimeField({ id, label, value, disabled, onChange }: { id: string; label: string; value: string; disabled: boolean; onChange: (time: string) => void }) {
+  const { t } = useI18n()
+  const [hour, minute] = value.split(':')
+  // A saved time off the 5-minute grid (e.g. 17:07) stays selectable.
+  const minutes = MINUTES.includes(minute) ? MINUTES : [...MINUTES, minute].sort()
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-slate-700">
+        {label}
+      </label>
+      <div dir="ltr" className="flex items-center gap-1">
+        <select id={id} aria-label={`${label}: ${t.addDay.hour}`} value={hour} onChange={(e) => onChange(`${e.target.value}:${minute}`)} disabled={disabled} className={selectClass}>
+          {HOURS.map((h) => (
+            <option key={h} value={h}>
+              {h}
+            </option>
+          ))}
+        </select>
+        <span className="font-semibold text-slate-500">:</span>
+        <select aria-label={`${label}: ${t.addDay.minute}`} value={minute} onChange={(e) => onChange(`${hour}:${e.target.value}`)} disabled={disabled} className={selectClass}>
+          {minutes.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
   )
 }

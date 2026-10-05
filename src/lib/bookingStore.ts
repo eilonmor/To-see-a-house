@@ -69,14 +69,14 @@ export function formatDate(
 
 // The phone number is the visitor's identity. Same rule as public.phone_key()
 // in the database: digits only, and the Israeli +972 prefix counts as a leading 0,
-// so "050-123-4567" and "+972 50 123 4567" are the same visitor.
+// so "054-3918750", "+972543918750" and "+972-54-3918750" are all saved as "0543918750".
 export function phoneKey(phone: string): string {
   const digits = String(phone).replace(/\D/g, '')
   return digits.startsWith('972') ? `0${digits.slice(3)}` : digits
 }
 
-/** Israeli numbers only (landline or mobile), the format the database accepts. */
-export const isValidPhone = (phone: string): boolean => /^0\d{8,9}$/.test(phoneKey(phone))
+/** A 10-digit Israeli number (e.g. 054-3918750), the format the database accepts for new bookings. */
+export const isValidPhone = (phone: string): boolean => /^0\d{9}$/.test(phoneKey(phone))
 
 /** Loads a property's public page. */
 export async function fetchProperty(slug: string): Promise<PublicProperty> {

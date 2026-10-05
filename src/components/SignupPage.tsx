@@ -108,7 +108,7 @@ export default function SignupPage() {
           inputMode="tel"
           autoComplete="tel"
           dir="ltr"
-          placeholder="050-123-4567"
+          placeholder="054-1234567"
           value={values.phone}
           onChange={update('phone')}
           error={errors.phone}

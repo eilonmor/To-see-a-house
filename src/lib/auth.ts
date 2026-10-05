@@ -2,6 +2,7 @@
 // user's profile row (created by a database trigger on sign-up).
 
 import type { Database } from './database.types'
+import { phoneKey } from './bookingStore'
 import { BookingError, run } from './supabase'
 
 export type Role = Database['public']['Enums']['user_role']
@@ -44,7 +45,8 @@ export async function signUp({ accountType, fullName, phone, email, password }: 
       password,
       options: {
         emailRedirectTo: appUrl('/dashboard'),
-        data: { role: accountType, full_name: fullName.trim(), phone: phone.trim() },
+        // The phone is saved normalized ("0543918750"), whatever way it was typed.
+        data: { role: accountType, full_name: fullName.trim(), phone: phone.trim() ? phoneKey(phone) : '' },
       },
     }),
   )
