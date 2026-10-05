@@ -1,13 +1,14 @@
-import { useState, type FormEvent } from 'react'
-import { MIN_PASSWORD_LENGTH, updatePassword } from '../lib/auth'
+import { useEffect, useState, type FormEvent } from 'react'
+import { MIN_PASSWORD_LENGTH, updatePassword, verifyRecoveryLink } from '../lib/auth'
 import { useSession } from '../hooks/useSession'
 import { navigate } from '../hooks/useRoute'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Alert, Button, Card, Field, Link, Loading, Spinner } from './ui'
 
 /**
- * Where the password-reset email leads. Supabase exchanges the link's code
- * for a session on load; with that session the user sets a new password.
+ * Where the password-reset email leads. The link logs the user in, either
+ * with "?token_hash=" (verified here) or "?code=" (exchanged by the Supabase
+ * client on load); with that session they set a new password.
  */
 export default function ResetPassword() {
   const { t } = useI18n()
@@ -16,6 +17,18 @@ export default function ResetPassword() {
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [verifying, setVerifying] = useState(() => new URLSearchParams(window.location.search).has('token_hash'))
+
+  useEffect(() => {
+    const tokenHash = new URLSearchParams(window.location.search).get('token_hash')
+    if (!tokenHash) return
+    // The token works once: drop it from the address bar (and from a second StrictMode run).
+    window.history.replaceState(null, '', window.location.pathname)
+    // On failure there's no session, and the page says the link is invalid.
+    verifyRecoveryLink(tokenHash)
+      .catch(() => {})
+      .finally(() => setVerifying(false))
+  }, [])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -32,7 +45,7 @@ export default function ResetPassword() {
     }
   }
 
-  if (session === undefined) return <Loading label={t.dashboard.loading} />
+  if (session === undefined || verifying) return <Loading label={t.dashboard.loading} />
 
   return (
     <Card className="mx-auto mt-8 max-w-sm">

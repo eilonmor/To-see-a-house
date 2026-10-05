@@ -78,6 +78,12 @@ export function phoneKey(phone: string): string {
 /** A 10-digit Israeli number (e.g. 054-3918750), the format the database accepts for new bookings. */
 export const isValidPhone = (phone: string): boolean => /^0\d{9}$/.test(phoneKey(phone))
 
+/**
+ * A number a booking may already be under: 10 digits, or a 9-digit landline
+ * accepted before the 10-digit rule. Used to find a guest's existing booking.
+ */
+export const isKnownPhone = (phone: string): boolean => /^0\d{8,9}$/.test(phoneKey(phone))
+
 /** Loads a property's public page. */
 export async function fetchProperty(slug: string): Promise<PublicProperty> {
   const data = (await run((db) => db.rpc('get_public_property', { p_slug: slug }))) as PublicPropertyJson | null

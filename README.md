@@ -37,7 +37,7 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
 1. Create a project at <https://supabase.com> (region: Frankfurt).
 2. **Apply the database schema.** Either paste each file in
    [`supabase/migrations/`](supabase/migrations/) into **SQL Editor** and run them
-   in order (`…_init.sql`, then `…_accounts.sql`), or with the Supabase CLI:
+   in order (`…_init.sql`, `…_accounts.sql`, then `…_phone_10_digits.sql`), or with the Supabase CLI:
    ```bash
    npx supabase login
    npx supabase link --project-ref <your-project-ref>
@@ -51,13 +51,21 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
    *Confirm email* on, new users must click the emailed link before they can log
    in. Supabase's built-in mailer allows only a few emails per hour; set up custom
    SMTP before launch.
-5. **Sign in with Google** (optional). In [Google Cloud Console](https://console.cloud.google.com/apis/credentials),
+5. **Password-reset email** (needs a paid Supabase plan). In **Authentication → Emails →
+   Reset Password**, change the link in the template to
+   `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=recovery`. The default link
+   only works in the browser that asked for the reset; this one works in any
+   browser (e.g. when the email is opened on a phone). On the free plan the
+   template can't be edited, so skip this step: resets still work, as long as the
+   user opens the email in the same browser. The app handles both links, so no
+   code change is needed after upgrading.
+6. **Sign in with Google** (optional). In [Google Cloud Console](https://console.cloud.google.com/apis/credentials),
    create an **OAuth client ID** (type *Web application*). Under *Authorized redirect URIs*
    add `https://<project-ref>.supabase.co/auth/v1/callback`. Then in Supabase,
    **Authentication → Sign In / Providers → Google**, enable it and paste the client ID
    and secret. Until then, the *Continue with Google* button leads to a Supabase
    error page ("provider is not enabled").
-6. Copy the **Project URL** and the **anon / publishable key** from
+7. Copy the **Project URL** and the **anon / publishable key** from
    **Project Settings → API**.
 
 ### Environment variables
@@ -185,6 +193,11 @@ npx supabase gen types typescript --project-id <project-ref> > src/lib/database.
   database through functions that return taken slots, never names or phone numbers.
 - **No visitor verification yet.** Anyone who knows a visitor's phone number can
   see, change or cancel that visitor's booking. Phase 3 adds an SMS/WhatsApp code.
+- **Password-reset and sign-up confirmation links work only in the browser that
+  asked for them** until the email templates are changed (step 5 above), which
+  needs a paid Supabase plan. Opened elsewhere, the reset page says the link is
+  invalid. A sign-up confirmation opened elsewhere still confirms the email, but
+  the user then has to log in themselves.
 - **Free plan limits** are enforced in the database: one property, and two
   upcoming viewing dates per property.
 - **Editing a viewing day can't strand a booking.** The database refuses new hours

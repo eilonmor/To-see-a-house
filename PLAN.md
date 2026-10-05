@@ -50,7 +50,11 @@ Migration: [supabase/migrations/20261004000000_init.sql](supabase/migrations/202
 6. **Launch on Cloudflare.** Must be done before phase 5 goes live (charging users on Vercel Hobby isn't allowed): buy the domain, move hosting from Vercel to Cloudflare Pages, connect the domain, delete `netlify.toml`.
 7. **Calendar sync.** First a private ICS subscription link per user (works with Google, Apple, Outlook; read-only, refreshed by the calendar app). Later, if needed, two-way Google / Outlook sync via OAuth, with tokens stored in Supabase and a scheduled edge function. Both run in Supabase, not on the host.
 
-## Known issues in the current app (fixed by phase 1)
+## Open issues
+
+- **Email links work only in the browser that requested them.** Password-reset and sign-up confirmation emails use Supabase's default `?code=` link, tied to the browser that asked for it. Opened on another device (e.g. the phone), a reset link fails with "invalid link". Fix: change the email templates to `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=recovery` (reset) and `…&type=signup` (confirmation). Editing templates needs a paid Supabase plan (Pro), so do it together with custom SMTP before launch (the built-in mailer also allows only a few emails per hour). The app already handles reset links in both formats; confirmation links of the new format still need handling in the app.
+
+## Known issues in the old app (fixed by phase 1)
 
 - The jsonbin.io key is in the browser bundle: anyone can read every guest's name and phone, or wipe the bin.
 - `ADMIN_PASSWORD` in `src/config.js` is in git and in the bundle. Change it wherever else you use it.

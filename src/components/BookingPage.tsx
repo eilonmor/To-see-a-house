@@ -6,6 +6,7 @@ import {
   fetchProperty,
   findGuestBookings,
   formatDate,
+  isValidPhone,
   rescheduleBooking,
   type GuestBooking,
   type GuestDetails,
@@ -59,6 +60,9 @@ export default function BookingPage({ slug }: { slug: string }) {
     if (existing.length > 0) {
       setResult({ ...existing[0], phone: d.phone, kind: 'existing' })
       setStep('done')
+    } else if (!isValidPhone(d.phone)) {
+      // A 9-digit number only reaches the bookings it already has.
+      setSubmitError(t.details.phoneError)
     } else {
       setMode('new')
       setStep('pick')

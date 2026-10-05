@@ -84,13 +84,15 @@ export async function applyPendingAccountType(profile: Profile): Promise<boolean
   let pending: string | null = null
   try {
     pending = sessionStorage.getItem(PENDING_ACCOUNT_TYPE_KEY)
-    sessionStorage.removeItem(PENDING_ACCOUNT_TYPE_KEY)
   } catch {
     return false
   }
-  if (pending !== 'agent' || profile.role !== 'personal' || profile.orgId) return false
-  await run((db) => db.rpc('become_agent'))
-  return true
+  if (!pending) return false
+  const upgrade = pending === 'agent' && profile.role === 'personal' && !profile.orgId
+  // Throws on failure, keeping the choice so that loading the account again retries.
+  if (upgrade) await run((db) => db.rpc('become_agent'))
+  forgetPendingAccountType()
+  return upgrade
 }
 
 export async function signOut(): Promise<void> {
@@ -100,6 +102,16 @@ export async function signOut(): Promise<void> {
 /** Emails a link to /reset-password, where the user picks a new password. */
 export async function requestPasswordReset(email: string): Promise<void> {
   await run((db) => db.auth.resetPasswordForEmail(email.trim(), { redirectTo: appUrl('/reset-password') }))
+}
+
+/**
+ * Logs in from a password-reset link of the form
+ * /reset-password?token_hash=…&type=recovery (see README: the Reset Password
+ * email template). Unlike the default "?code=" link, it works in any browser,
+ * not only the one that asked for the reset.
+ */
+export async function verifyRecoveryLink(tokenHash: string): Promise<void> {
+  await run((db) => db.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' }))
 }
 
 /** Sets a new password for the logged-in user (after following the reset link). */

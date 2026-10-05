@@ -34,7 +34,13 @@ export default function AccountGate({ children }: { children: ReactNode }) {
     if (!userId) return
     try {
       const loaded = await fetchProfile(userId)
-      setProfile((await applyPendingAccountType(loaded)) ? await fetchProfile(userId) : loaded)
+      let upgraded = false
+      try {
+        upgraded = await applyPendingAccountType(loaded)
+      } catch {
+        // The choice is kept and retried on the next load; meanwhile the account works as personal.
+      }
+      setProfile(upgraded ? await fetchProfile(userId) : loaded)
       setError(null)
     } catch (err) {
       setError(err)

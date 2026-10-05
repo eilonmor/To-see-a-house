@@ -1,7 +1,7 @@
 -- Guest phone numbers must have 10 digits (e.g. 054-3918750 -> 0543918750).
--- Before, 9-digit landline numbers were accepted too. Existing guests and
--- bookings are kept as they are; only new bookings are checked.
--- Apply after 20261005000000_accounts.sql.
+-- Before, 9-digit landline numbers were accepted too. Guests who already
+-- booked with one keep it: they can still book, move and cancel with it.
+-- Apply after 20261005000000_accounts.sql. Safe to run again.
 
 create or replace function public.book_guest_slot(p_day_id uuid, p_slot time, p_name text, p_phone text)
 returns jsonb
@@ -13,7 +13,8 @@ declare
   existing public.bookings;
   instr text;
 begin
-  if key !~ '^0[0-9]{9}$' then
+  if key !~ '^0[0-9]{9}$'
+     and not (key ~ '^0[0-9]{8}$' and exists (select 1 from public.guests g where g.phone_key = key)) then
     raise exception 'invalid_phone';
   end if;
   if guest_name = '' then
