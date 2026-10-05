@@ -49,10 +49,13 @@ export function daySlots({ start_time, end_time, slot_minutes }: DayRange): stri
   return slots
 }
 
-/** Today's date in Israel as 'YYYY-MM-DD' (the database decides "past" by this date). */
-export function israelToday(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(new Date())
+/** A moment's date in Israel as 'YYYY-MM-DD'. */
+export function israelDate(moment: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(moment)
 }
+
+/** Today's date in Israel as 'YYYY-MM-DD' (the database decides "past" by this date). */
+export const israelToday = (): string => israelDate(new Date())
 
 /** Formats a 'YYYY-MM-DD' date for display, day first in both languages, e.g. "Sun 12/10". */
 export function formatDate(

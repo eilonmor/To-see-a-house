@@ -18,6 +18,6 @@ export const SUPABASE = {
   anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() || '',
 }
 
-// The property the root page (/) shows. Other properties are reached through
-// their own link: /#/p/<slug>.
+// Optional: a property the root page (/) shows instead of the home page.
+// Every property is also reached through its own link: /p/<slug>.
 export const DEFAULT_PROPERTY_SLUG = import.meta.env.VITE_PROPERTY_SLUG?.trim() || ''

@@ -1,6 +1,7 @@
 // Small shared UI primitives.
 
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
+import { useEffect, type AnchorHTMLAttributes, type ButtonHTMLAttributes, type InputHTMLAttributes, type MouseEvent, type ReactNode } from 'react'
+import { navigate } from '../hooks/useRoute'
 
 export function Card({ className = '', children }: { className?: string; children: ReactNode }) {
   return (
@@ -67,5 +68,32 @@ export function Spinner({ className = 'h-4 w-4' }: { className?: string }) {
       <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
       <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="4" strokeLinecap="round" className="opacity-75" />
     </svg>
+  )
+}
+
+type LinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }
+
+/** An in-app link: navigates without reloading, but still opens in a new tab on ctrl/cmd-click. */
+export function Link({ href, onClick, ...props }: LinkProps) {
+  function handleClick(e: MouseEvent<HTMLAnchorElement>) {
+    onClick?.(e)
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    e.preventDefault()
+    navigate(href)
+  }
+  return <a href={href} onClick={handleClick} {...props} />
+}
+
+/** Replaces the current path with `to` once rendered. */
+export function Redirect({ to }: { to: string }) {
+  useEffect(() => navigate(to, { replace: true }), [to])
+  return null
+}
+
+export function Loading({ label }: { label: string }) {
+  return (
+    <div className="flex items-center justify-center gap-2 py-16 text-slate-500">
+      <Spinner /> {label}
+    </div>
   )
 }

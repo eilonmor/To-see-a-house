@@ -1,15 +1,24 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { DEFAULT_PROPERTY_SLUG } from './config'
-import { useHashRoute } from './hooks/useHashRoute'
+import { useRoute } from './hooks/useRoute'
+import { useSession } from './hooks/useSession'
 import { useI18n } from './i18n/I18nProvider'
 import Layout from './components/Layout'
+import Home from './components/Home'
 import BookingPage from './components/BookingPage'
-import AdminPage from './components/AdminPage'
-import { Card } from './components/ui'
+import LoginForm from './components/LoginForm'
+import SignupPage from './components/SignupPage'
+import ForgotPassword from './components/ForgotPassword'
+import ResetPassword from './components/ResetPassword'
+import AccountGate from './components/AccountGate'
+import PropertyList from './components/PropertyList'
+import NewProperty from './components/NewProperty'
+import PropertyEditor from './components/PropertyEditor'
+import { Card, Link, Loading, Redirect } from './components/ui'
 
-// A malformed link (e.g. "#/p/%") can't be decoded; the raw text then simply
-// matches no property, and the page says so.
-function decodeSlug(raw: string): string {
+// A malformed link (e.g. "/p/%") can't be decoded; the raw text then simply
+// matches nothing, and the page says so.
+function decodeSegment(raw: string): string {
   try {
     return decodeURIComponent(raw)
   } catch {
@@ -18,35 +27,56 @@ function decodeSlug(raw: string): string {
 }
 
 export default function App() {
-  const route = useHashRoute()
-  const isAdmin = route.startsWith('/admin')
-  const linkSlug = route.match(/^\/p\/([^/?#]+)/)?.[1]
-  const slug = linkSlug || DEFAULT_PROPERTY_SLUG
+  const { t } = useI18n()
+  const route = useRoute()
+  const session = useSession()
+  const path = route.replace(/\/+$/, '') || '/'
 
-  // The header links lead back to the last property opened by its own link,
-  // e.g. after visiting the admin page.
+  const linkSlug = path.match(/^\/p\/([^/]+)$/)?.[1]
+  const slug = linkSlug ?? (path === '/' ? DEFAULT_PROPERTY_SLUG : '')
+  const editorId = path.match(/^\/dashboard\/p\/([^/]+)$/)?.[1]
+
+  // On a property's page, the logo leads back to the last property opened by
+  // its own link, e.g. after a visit to another page.
   const [homeSlug, setHomeSlug] = useState(linkSlug)
   if (linkSlug && linkSlug !== homeSlug) setHomeSlug(linkSlug)
-  const homeHref = homeSlug ? `#/p/${homeSlug}` : '#/'
 
-  let page
-  if (isAdmin) page = <AdminPage />
-  else if (slug) page = <BookingPage key={slug} slug={decodeSlug(slug)} />
-  else page = <NoProperty />
+  // Login and sign-up are only for visitors without a session.
+  const guestOnly = (page: ReactNode) =>
+    session === undefined ? <Loading label={t.dashboard.loading} /> : session ? <Redirect to="/dashboard" /> : page
+
+  let page: ReactNode
+  if (slug) page = <BookingPage key={slug} slug={decodeSegment(slug)} />
+  else if (path === '/') page = <Home loggedIn={Boolean(session)} />
+  else if (path === '/login') page = guestOnly(<LoginForm />)
+  else if (path === '/signup') page = guestOnly(<SignupPage />)
+  else if (path === '/forgot-password') page = <ForgotPassword />
+  else if (path === '/reset-password') page = <ResetPassword />
+  else if (path === '/admin') page = <Redirect to="/dashboard" />
+  else if (path === '/dashboard') page = <AccountGate><PropertyList /></AccountGate>
+  else if (path === '/dashboard/new') page = <AccountGate><NewProperty /></AccountGate>
+  else if (editorId) page = <AccountGate><PropertyEditor key={editorId} propertyId={decodeSegment(editorId)} /></AccountGate>
+  else page = <NotFound />
+
+  const nav = slug ? { href: '/dashboard', label: session ? t.nav.myProperties : t.nav.owners } : null
+  const logoHref = slug ? (homeSlug ? `/p/${homeSlug}` : '/') : session ? '/dashboard' : '/'
 
   return (
-    <Layout isAdmin={isAdmin} homeHref={homeHref}>
+    <Layout logoHref={logoHref} nav={nav}>
       {page}
     </Layout>
   )
 }
 
-function NoProperty() {
+function NotFound() {
   const { t } = useI18n()
   return (
     <Card className="mx-auto mt-8 max-w-md text-center">
-      <h1 className="text-xl font-semibold text-slate-900">{t.noProperty.title}</h1>
-      <p className="mt-2 text-slate-500">{t.noProperty.body}</p>
+      <h1 className="text-xl font-semibold text-slate-900">{t.notFound.title}</h1>
+      <p className="mt-2 text-slate-500">{t.notFound.body}</p>
+      <Link href="/" className="mt-4 inline-block font-medium text-indigo-600 hover:underline">
+        {t.notFound.home}
+      </Link>
     </Card>
   )
 }

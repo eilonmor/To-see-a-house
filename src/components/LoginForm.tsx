@@ -1,22 +1,24 @@
 import { useState, type FormEvent } from 'react'
-import { signIn } from '../lib/adminStore'
+import { signIn } from '../lib/auth'
 import { errorText, useI18n } from '../i18n/I18nProvider'
-import { Button, Card, Field, Spinner } from './ui'
+import { Button, Card, Field, Link, Spinner } from './ui'
+import GoogleButton from './GoogleButton'
 
-export default function AdminLogin() {
+/** Email + password login. On success, useSession() picks up the new session. */
+export default function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
   const { t } = useI18n()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  // On success, useSession() picks up the new session and shows the dashboard.
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError('')
     try {
       await signIn(email, password)
+      onSuccess?.()
     } catch (err) {
       setError(errorText(err, t))
       setPassword('')
@@ -34,7 +36,10 @@ export default function AdminLogin() {
       </div>
       <h1 className="mt-4 text-center text-xl font-semibold text-slate-900">{t.login.title}</h1>
       <p className="mt-1 text-center text-sm text-slate-500">{t.login.subtitle}</p>
-      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+      <div className="mt-6">
+        <GoogleButton />
+      </div>
+      <form onSubmit={handleSubmit} className="mt-4 space-y-4">
         <Field
           id="email"
           label={t.login.email}
@@ -60,10 +65,21 @@ export default function AdminLogin() {
           }}
           error={error}
         />
+        <div className="text-end text-sm">
+          <Link href="/forgot-password" className="text-indigo-600 hover:underline">
+            {t.login.forgot}
+          </Link>
+        </div>
         <Button type="submit" className="w-full" disabled={!email || !password || busy}>
           {busy && <Spinner />} {t.login.submit}
         </Button>
       </form>
+      <p className="mt-6 text-center text-sm text-slate-500">
+        {t.login.noAccount}{' '}
+        <Link href="/signup" className="font-medium text-indigo-600 hover:underline">
+          {t.login.signupLink}
+        </Link>
+      </p>
     </Card>
   )
 }
