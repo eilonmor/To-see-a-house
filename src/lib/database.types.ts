@@ -236,6 +236,7 @@ export type Database = {
       accept_agency_invite: { Args: { p_code: string }; Returns: string }
       leave_agency: { Args: Record<PropertyKey, never>; Returns: undefined }
       remove_agent: { Args: { p_agent_id: string }; Returns: undefined }
+      become_agent: { Args: Record<PropertyKey, never>; Returns: undefined }
     }
     Enums: {
       user_role: 'personal' | 'agent' | 'agency_admin'

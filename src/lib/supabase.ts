@@ -7,7 +7,11 @@ export type Db = SupabaseClient<Database>
 export const isConfigured = Boolean(SUPABASE.url && SUPABASE.anonKey)
 
 // Without configuration the app shows a setup banner instead of crashing.
-export const supabase: Db | null = isConfigured ? createClient<Database>(SUPABASE.url, SUPABASE.anonKey) : null
+// PKCE: links in sign-up and password-reset emails come back as "?code=…",
+// which the client exchanges for a session on load.
+export const supabase: Db | null = isConfigured
+  ? createClient<Database>(SUPABASE.url, SUPABASE.anonKey, { auth: { flowType: 'pkce' } })
+  : null
 
 export type ErrorParams = Record<string, string | number>
 

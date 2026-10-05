@@ -1,10 +1,24 @@
 // Admin-side data layer. Runs as the logged-in Supabase user; row-level
 // security limits every query to the properties that user manages.
 
-import { daySlots, hhmm } from './bookingStore'
-import { run } from './supabase'
+import { daySlots, hhmm, israelToday } from './bookingStore'
+import { BookingError, run } from './supabase'
 
-export type Property = { id: string; title: string; address: string; instructions: string; public_slug: string }
+export type Property = {
+  id: string
+  title: string
+  address: string
+  instructions: string
+  public_slug: string
+  // Exactly one is set: the user or the agency that owns (and pays for) the property.
+  owner_user_id: string | null
+  owner_org_id: string | null
+}
+
+/** A property in the list, with its upcoming dates and how many visits are booked on them. */
+export type PropertySummary = Property & { upcomingDates: string[]; upcomingBookings: number }
+
+export type PropertyDetails = { title: string; address: string }
 
 export type AdminBooking = { id: string; name: string; phone: string }
 
@@ -21,23 +35,35 @@ export type AdminDay = {
 
 export type NewDay = { date: string; startTime: string; endTime: string; slotMinutes: number }
 
-const PROPERTY_COLUMNS = 'id, title, address, instructions, public_slug'
+const PROPERTY_COLUMNS = 'id, title, address, instructions, public_slug, owner_user_id, owner_org_id'
 
-export async function signIn(email: string, password: string): Promise<void> {
-  await run((db) => db.auth.signInWithPassword({ email: email.trim(), password }))
+/** Every property the user manages, newest first. */
+export async function fetchProperties(): Promise<PropertySummary[]> {
+  const rows = await run((db) =>
+    db
+      .from('properties')
+      .select(`${PROPERTY_COLUMNS}, visit_days (date, bookings (count))`)
+      .order('created_at', { ascending: false }),
+  )
+  const today = israelToday()
+  return rows.map(({ visit_days, ...property }) => {
+    const upcoming = visit_days.filter((d) => d.date >= today)
+    return {
+      ...property,
+      upcomingDates: upcoming.map((d) => d.date).sort(),
+      upcomingBookings: upcoming.reduce((n, d) => n + (d.bookings[0]?.count ?? 0), 0),
+    }
+  })
 }
 
-export async function signOut(): Promise<void> {
-  await run(async (db) => ({ data: null, ...(await db.auth.signOut()) }))
+/** One property by id. Throws 'propertyNotFound' if it doesn't exist or the user can't manage it. */
+export async function fetchProperty(propertyId: string): Promise<Property> {
+  const row = await run((db) => db.from('properties').select(PROPERTY_COLUMNS).eq('id', propertyId).maybeSingle())
+  if (!row) throw new BookingError('propertyNotFound')
+  return row
 }
 
-/** The first property the user manages, or null. (Phase 2 adds a property list.) */
-export async function fetchMyProperty(): Promise<Property | null> {
-  const rows = await run((db) => db.from('properties').select(PROPERTY_COLUMNS).order('created_at').limit(1))
-  return rows[0] ?? null
-}
-
-export async function createProperty(userId: string, { title, address }: { title: string; address: string }): Promise<Property> {
+export async function createProperty(userId: string, { title, address }: PropertyDetails): Promise<Property> {
   return run((db) =>
     db
       .from('properties')
@@ -45,6 +71,24 @@ export async function createProperty(userId: string, { title, address }: { title
       .select(PROPERTY_COLUMNS)
       .single(),
   )
+}
+
+export async function updateProperty(propertyId: string, { title, address }: PropertyDetails): Promise<Property> {
+  return run((db) =>
+    db
+      .from('properties')
+      .update({ title: title.trim(), address: address.trim() })
+      .eq('id', propertyId)
+      .select(PROPERTY_COLUMNS)
+      .single(),
+  )
+}
+
+/** Deletes a property with all its dates and bookings. */
+export async function deleteProperty(propertyId: string): Promise<void> {
+  const rows = await run((db) => db.from('properties').delete().eq('id', propertyId).select('id'))
+  // Row-level security turns a forbidden delete into "0 rows" rather than an error.
+  if (rows.length === 0) throw new BookingError('notPropertyOwner')
 }
 
 /** Saves the instructions shown to visitors after they book. Returns the saved text. */
@@ -77,16 +121,20 @@ export async function fetchDays(propertyId: string): Promise<AdminDay[]> {
   }))
 }
 
-export async function addDay(propertyId: string, { date, startTime, endTime, slotMinutes }: NewDay): Promise<void> {
-  await run((db) =>
-    db.from('visit_days').insert({
-      property_id: propertyId,
-      date,
-      start_time: startTime,
-      end_time: endTime,
-      slot_minutes: slotMinutes,
-    }),
-  )
+const dayColumns = ({ date, startTime, endTime, slotMinutes }: NewDay) => ({
+  date,
+  start_time: startTime,
+  end_time: endTime,
+  slot_minutes: slotMinutes,
+})
+
+export async function addDay(propertyId: string, day: NewDay): Promise<void> {
+  await run((db) => db.from('visit_days').insert({ property_id: propertyId, ...dayColumns(day) }))
+}
+
+/** Changes a visit day's date or hours. The database refuses hours that would leave a booking out. */
+export async function updateDay(dayId: string, day: NewDay): Promise<void> {
+  await run((db) => db.from('visit_days').update(dayColumns(day)).eq('id', dayId))
 }
 
 /** Deletes a visit day and all of its bookings. */

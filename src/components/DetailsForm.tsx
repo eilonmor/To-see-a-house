@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
-import { isValidPhone, type GuestDetails } from '../lib/bookingStore'
+import { isKnownPhone, type GuestDetails } from '../lib/bookingStore'
 import { useI18n } from '../i18n/I18nProvider'
 import type { Translation } from '../i18n/translations'
 import { Button, Card, Field, Spinner } from './ui'
@@ -9,7 +9,9 @@ type Errors = Partial<Record<keyof GuestDetails, string>>
 function validate({ name, phone }: GuestDetails, t: Translation): Errors {
   const errors: Errors = {}
   if (name.trim().length < 2) errors.name = t.details.nameError
-  if (!/^[+\d][\d\s\-()]*$/.test(phone.trim()) || !isValidPhone(phone)) errors.phone = t.details.phoneError
+  // Lenient on purpose: an old 9-digit number still finds its booking. BookingPage
+  // asks for 10 digits before a new booking.
+  if (!/^[+\d][\d\s\-()]*$/.test(phone.trim()) || !isKnownPhone(phone)) errors.phone = t.details.phoneError
   return errors
 }
 
@@ -54,7 +56,7 @@ export default function DetailsForm({ initial, busy, onSubmit }: Props) {
           inputMode="tel"
           autoComplete="tel"
           dir="ltr"
-          placeholder="050-123-4567"
+          placeholder="054-1234567"
           value={values.phone}
           onChange={update('phone')}
           error={errors.phone}
