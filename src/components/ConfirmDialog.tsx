@@ -63,9 +63,15 @@ function ConfirmDialog({ request, onAnswer }: { request: Request; onAnswer: (ok:
   useEffect(() => {
     const dialog = dialogRef.current
     if (!dialog) return
+    // React removes the dialog before this cleanup runs, so the browser can't
+    // return focus by itself: hand it back to whatever opened the dialog.
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     if (!dialog.open) dialog.showModal()
     ;(danger ? cancelRef : confirmRef).current?.focus()
-    return () => dialog.close()
+    return () => {
+      dialog.close()
+      if (opener?.isConnected) opener.focus()
+    }
   }, [danger])
 
   // A click on the dialog element itself (not its content) is a click on the backdrop.
@@ -77,7 +83,6 @@ function ConfirmDialog({ request, onAnswer }: { request: Request; onAnswer: (ok:
     <dialog
       ref={dialogRef}
       role="alertdialog"
-      aria-describedby={messageId}
       aria-labelledby={messageId}
       onCancel={(e) => {
         e.preventDefault()
