@@ -32,11 +32,22 @@ See [PLAN.md](PLAN.md) for where the project is going.
 - **Changing the arrival time.** The confirmation screen has a *Change arrival
   time* button. Nothing changes until the visitor picks another free time and
   presses *Approve change*. The old time is freed only after the new one is saved.
+- **Add to calendar.** After booking, the visitor can add the visit to Google
+  Calendar (a link) or to Apple Calendar / Outlook (an `.ics` file), with the
+  address, the visitor instructions and a link back to the booking page. It's a
+  copy: if the visitor changes the time, they add it again (Apple and Outlook
+  then update the same event).
 - **Property editor**: the link to send to visitors, a table per viewing day with
   each visitor's name and phone (tap to call). You can release bookings; add, edit
   or delete viewing days; change the title and address; write **visitor
   instructions** (address, floor, door code, parking, a Waze link) that visitors
   see after they book; and delete the apartment.
+- **Calendar sync** (`/dashboard/calendar`): a private link that Google, Apple or
+  Outlook Calendar subscribes to. Each viewing date of every apartment you manage
+  is one event, with the visitors' times, names and phones in its description.
+  Read-only, and the calendar app decides when to fetch it again (Google: every
+  few hours; Apple and Outlook: about hourly). The link can be replaced (the old
+  one stops working) or turned off.
 - Old `/#/p/<slug>` and `/#/admin` links redirect to the new addresses.
 
 The interface is in **Hebrew (right-to-left) by default**, and a button in the
@@ -52,7 +63,7 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
 2. **Apply the database schema.** Either paste each file in
    [`supabase/migrations/`](supabase/migrations/) into **SQL Editor** and run them
    in order (`…_init.sql`, `…_accounts.sql`, `…_phone_10_digits.sql`, `…_guest_otp.sql`,
-   `…_agencies.sql`), or with the Supabase CLI.
+   `…_agencies.sql`, `…_calendar_feed.sql`), or with the Supabase CLI.
    Hold back `…_revoke_guest_anon.sql` until the edge functions (step 8) and the new
    frontend are live: it cuts off the browser's direct access to the booking functions.
    `db push` applies every pending file, including that one, so on an existing
@@ -104,6 +115,12 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
    Secrets take effect without redeploying. Changing `GUEST_TOKEN_SECRET` logs out
    every visitor (they verify again).
 9. Once the new frontend is deployed, apply `…_revoke_guest_anon.sql` in the SQL Editor.
+10. **Deploy the calendar feed** (after `…_calendar_feed.sql`). `APP_URL` is optional:
+    with it, each calendar event links to the apartment's page in the app.
+    ```bash
+    npx supabase secrets set APP_URL=https://your-domain.com
+    npx supabase functions deploy calendar-feed
+    ```
 
 #### SMS limits
 
@@ -130,6 +147,7 @@ Edge function secrets (set with `npx supabase secrets set`, never in `.env`):
 | `SMS_019_USERNAME`   | 019 SMS username                                                    |
 | `SMS_019_TOKEN`      | 019 SMS API token                                                   |
 | `SMS_019_SOURCE`     | Sender name shown on the SMS, up to 11 English letters or digits    |
+| `APP_URL`            | Optional. The site's address; calendar events link to the app       |
 
 ---
 
@@ -211,7 +229,8 @@ src/
 │   ├── bookingStore.ts        # visitor API (SMS code, edge functions), slot/date/phone helpers
 │   ├── auth.ts                # sign-up, login, password reset, profile
 │   ├── adminStore.ts          # owner API: properties, days, bookings
-│   └── agencyStore.ts         # agencies, invites, members, agent assignments
+│   ├── agencyStore.ts         # agencies, invites, members, agent assignments
+│   └── calendarStore.ts       # the private calendar (ICS) link
 ├── hooks/
 │   ├── usePolledData.ts       # loads data and keeps it fresh (polling)
 │   ├── useSession.ts          # Supabase auth session
@@ -235,10 +254,11 @@ src/
     ├── PropertyEditor.tsx     # share link, bookings per day, details, agents, delete
     ├── AgencyPage.tsx         # set up / join an agency; members, invites, leave
     ├── JoinPage.tsx           # /join/<code>: accept an agency invite
+    ├── CalendarPage.tsx       # /dashboard/calendar: calendar subscription link
     ├── DayForm.tsx            # add or edit a viewing day
     └── InstructionsEditor.tsx # post-booking instructions
 supabase/migrations/           # database schema, rules and row-level security
-supabase/functions/            # edge functions: send-otp, verify-otp, guest-bookings
+supabase/functions/            # edge functions: send-otp, verify-otp, guest-bookings, calendar-feed
 scripts/import-jsonbin.mjs     # one-time import of the old jsonbin.io data
 ```
 
@@ -280,5 +300,8 @@ npx supabase gen types typescript --project-id <project-ref> > src/lib/database.
   and get unlimited apartments. The same goes for owners who upgrade, for agencies,
   and for owners who join an agency: joining makes the account an agent's, and it
   stays one after leaving.
+- **The calendar link is a password.** Calendar apps can't log in, so anyone
+  with the link sees the bookings in it, including visitors' names and phones
+  (and the calendar app, e.g. Google, keeps a copy). Replace the link if it leaks.
 - **Agencies have one admin, who can't leave.** There's no way yet to hand the
   agency to another member or to delete it.

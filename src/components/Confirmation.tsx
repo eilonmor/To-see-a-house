@@ -1,4 +1,5 @@
-import { formatDate, type GuestBooking } from '../lib/bookingStore'
+import { formatDate, type GuestBooking, type PublicProperty } from '../lib/bookingStore'
+import { googleCalendarUrl, icsDataUrl, israelMoment, type CalendarEvent } from '../lib/guestCalendar'
 import { useI18n } from '../i18n/I18nProvider'
 import { Alert, Button, Card, Spinner } from './ui'
 
@@ -16,6 +17,7 @@ export type BookingResult = GuestBooking & {
 
 type Props = {
   result: BookingResult
+  property: PublicProperty
   cancelling: boolean
   cancelError: string
   onChangeTime: () => void
@@ -23,7 +25,7 @@ type Props = {
   onBookAgain: () => void
 }
 
-export default function Confirmation({ result, cancelling, cancelError, onChangeTime, onCancel, onBookAgain }: Props) {
+export default function Confirmation({ result, property, cancelling, cancelError, onChangeTime, onCancel, onBookAgain }: Props) {
   const { t, lang } = useI18n()
   const { date, slot, name, phone, instructions, kind, previousWhen = '' } = result
 
@@ -96,6 +98,8 @@ export default function Confirmation({ result, cancelling, cancelError, onChange
         </div>
       )}
 
+      <AddToCalendar result={result} property={property} />
+
       {cancelError && (
         <div className="mt-6">
           <Alert>{cancelError}</Alert>
@@ -109,6 +113,41 @@ export default function Confirmation({ result, cancelling, cancelError, onChange
         {cancelling ? <Spinner /> : null} {cancelling ? t.confirmation.cancelling : t.confirmation.cancel}
       </Button>
     </Card>
+  )
+}
+
+// Visits whose day is no longer listed (e.g. it was just deleted) get this length.
+const DEFAULT_VISIT_MINUTES = 15
+
+function AddToCalendar({ result, property }: { result: BookingResult; property: PublicProperty }) {
+  const { t } = useI18n()
+  const minutes = property.days.find((d) => d.id === result.dayId)?.slotMinutes ?? DEFAULT_VISIT_MINUTES
+  const start = israelMoment(result.date, result.slot)
+  // The booking page, where the visitor can change or cancel the booking.
+  const pageUrl = `${window.location.origin}${window.location.pathname}`
+  const event: CalendarEvent = {
+    uid: `${result.dayId}@to-see-a-house-visit`,
+    start,
+    end: new Date(start.getTime() + minutes * 60_000),
+    title: t.confirmation.calendar.eventTitle(property.title),
+    details: [result.instructions, `${t.confirmation.calendar.manage} ${pageUrl}`].filter(Boolean).join('\n\n'),
+    location: property.address,
+  }
+  const linkClass =
+    'inline-flex flex-1 items-center justify-center rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2'
+
+  return (
+    <div className="mt-6">
+      <h3 className="text-sm font-semibold text-slate-700">{t.confirmation.calendar.title}</h3>
+      <div className="mt-2 flex gap-2">
+        <a href={googleCalendarUrl(event)} target="_blank" rel="noopener noreferrer" className={linkClass}>
+          Google
+        </a>
+        <a href={icsDataUrl(event)} download="viewing.ics" className={linkClass}>
+          Apple / Outlook
+        </a>
+      </div>
+    </div>
   )
 }
 

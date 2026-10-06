@@ -12,3 +12,7 @@ verify_jwt = false
 
 [functions.guest-bookings]
 verify_jwt = false
+
+# Calendar apps can't log in: the secret token in the feed link is the credential.
+[functions.calendar-feed]
+verify_jwt = false
