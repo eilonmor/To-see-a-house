@@ -176,17 +176,23 @@ every bundle the old version of the site shipped.
 The app is a static site. Vite reads the `VITE_*` variables **at build time**, so
 set them in your host's dashboard *before* building, and redeploy after changing them.
 
-### Vercel
+### Cloudflare Pages
 
 1. Push this repo to GitHub.
-2. On <https://vercel.com/new>, import the repository. Vercel detects **Vite**.
-3. Under **Environment Variables**, add `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
-   and, optionally, `VITE_PROPERTY_SLUG`.
-4. Click **Deploy**.
+2. Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** →
+   **Connect to Git**, and pick the repository (production branch `main`).
+3. Framework preset **Vite**, build command `npm run build`, output directory `dist`.
+4. Under **Environment Variables** (as Text, for Production and Preview), add
+   `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, optionally `VITE_PROPERTY_SLUG`,
+   and `NODE_VERSION` = `22`.
+5. Deploy, then add your domain under **Custom domains**.
+6. In Supabase → **Authentication → URL Configuration**, set the Site URL to
+   your domain and add it (and `https://*.<project>.pages.dev/**` for previews)
+   to the Redirect URLs.
 
 The app uses path routes (`/p/<slug>`, `/dashboard`), so the host must serve
-`index.html` for every path. [`vercel.json`](vercel.json) and
-[`netlify.toml`](netlify.toml) do this; Cloudflare Pages does it by default.
+`index.html` for every path. Cloudflare Pages does this by default when the
+build has no `404.html`.
 
 ---
 

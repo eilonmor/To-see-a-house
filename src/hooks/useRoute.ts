@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 // Minimal path-based routing ("/p/<slug>", "/dashboard"). The host serves
-// index.html for every path (see vercel.json); links call navigate() so the
+// index.html for every path (Cloudflare Pages default); links call navigate() so the
 // page doesn't reload.
 
 const NAVIGATE_EVENT = 'app:navigate'
