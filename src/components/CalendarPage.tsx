@@ -4,7 +4,7 @@ import {
   createCalendarToken,
   deleteCalendarToken,
   fetchCalendarToken,
-  googleCalendarUrl,
+  googleSubscribeUrl,
   webcalUrl,
 } from '../lib/calendarStore'
 import { errorText, useI18n } from '../i18n/I18nProvider'
@@ -25,9 +25,12 @@ export default function CalendarPage() {
   const [loadError, setLoadError] = useState<unknown>(null)
   const [busy, setBusy] = useState<'create' | 'reset' | 'off' | null>(null)
   const [actionError, setActionError] = useState('')
+  // Bumped by "Try again" after a failed load.
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
+    setLoadError(null)
     fetchCalendarToken(user.id).then(
       (loaded) => !cancelled && setToken(loaded),
       (err) => !cancelled && setLoadError(err),
@@ -35,7 +38,7 @@ export default function CalendarPage() {
     return () => {
       cancelled = true
     }
-  }, [user.id])
+  }, [user.id, attempt])
 
   async function act(kind: 'create' | 'reset' | 'off', confirmText: string | null, action: () => Promise<string | null>) {
     if (confirmText && !(await confirm(confirmText, { tone: 'danger' }))) return
@@ -72,9 +75,16 @@ export default function CalendarPage() {
 
       {token === undefined ? (
         loadError != null ? (
-          <Alert>
-            {t.calendar.loadError} {errorText(loadError, t)}
-          </Alert>
+          <div className="space-y-3">
+            <Alert>
+              {t.calendar.loadError} {errorText(loadError, t)}
+            </Alert>
+            <div className="flex justify-center">
+              <Button variant="secondary" onClick={() => setAttempt((n) => n + 1)}>
+                ↻ {t.calendar.retry}
+              </Button>
+            </div>
+          </div>
         ) : (
           <Loading label={t.dashboard.loading} />
         )
@@ -99,7 +109,7 @@ export default function CalendarPage() {
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <a
-              href={googleCalendarUrl(feedUrl)}
+              href={googleSubscribeUrl(feedUrl)}
               target="_blank"
               rel="noopener noreferrer"
               className={`${linkButton} bg-indigo-600 text-white hover:bg-indigo-700`}

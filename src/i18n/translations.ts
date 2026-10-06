@@ -133,6 +133,7 @@ const he = {
       title: 'הוספה ליומן',
       eventTitle: (title: string) => `צפייה בדירה: ${title}`,
       manage: 'לשינוי או ביטול:',
+      removeAfterCancel: 'אם הוספתם את הביקור ליומן, מחקו אותו שם.',
     },
   },
   instructions: {
@@ -278,6 +279,7 @@ const he = {
     turnOff: 'כיבוי הקישור',
     confirmTurnOff: 'לכבות את הקישור? יומנים שהוספתם יפסיקו להתעדכן. אפשר ליצור קישור חדש בכל רגע.',
     loadError: 'לא ניתן לטעון את הקישור:',
+    retry: 'ניסיון נוסף',
     actionError: 'הפעולה נכשלה:',
   },
   properties: {
@@ -560,6 +562,7 @@ const en: Translation = {
       title: 'Add to calendar',
       eventTitle: (title: string) => `Apartment viewing: ${title}`,
       manage: 'To change or cancel:',
+      removeAfterCancel: 'If you added the visit to your calendar, delete it there.',
     },
   },
   instructions: {
@@ -706,6 +709,7 @@ const en: Translation = {
     turnOff: 'Turn off the link',
     confirmTurnOff: 'Turn off the link? Calendars you added it to stop updating. You can create a new link at any time.',
     loadError: 'Could not load the link:',
+    retry: 'Try again',
     actionError: 'That did not work:',
   },
   properties: {

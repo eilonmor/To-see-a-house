@@ -1,5 +1,5 @@
-import { formatDate, type GuestBooking, type PublicProperty } from '../lib/bookingStore'
-import { googleCalendarUrl, icsDataUrl, israelMoment, type CalendarEvent } from '../lib/guestCalendar'
+import { formatDate, phoneKey, type GuestBooking, type PublicProperty } from '../lib/bookingStore'
+import { googleEventUrl, icsDataUrl, israelMoment, visitUid, type CalendarEvent } from '../lib/guestCalendar'
 import { useI18n } from '../i18n/I18nProvider'
 import { Alert, Button, Card, Spinner } from './ui'
 
@@ -39,6 +39,7 @@ export default function Confirmation({ result, property, cancelling, cancelError
         </div>
         <h2 className="mt-5 text-2xl font-bold text-slate-900">{t.confirmation.cancelled.title}</h2>
         <p className="mt-2 text-slate-500">{t.confirmation.cancelled.body(name, `${formatDate(date, lang)} ${slot}`)}</p>
+        <p className="mt-2 text-sm text-slate-400">{t.confirmation.calendar.removeAfterCancel}</p>
         <Button variant="secondary" className="mt-6 w-full" onClick={onBookAgain}>
           {t.confirmation.bookAgain}
         </Button>
@@ -126,7 +127,7 @@ function AddToCalendar({ result, property }: { result: BookingResult; property: 
   // The booking page, where the visitor can change or cancel the booking.
   const pageUrl = `${window.location.origin}${window.location.pathname}`
   const event: CalendarEvent = {
-    uid: `${result.dayId}@to-see-a-house-visit`,
+    uid: visitUid(property.id, phoneKey(result.phone)),
     start,
     end: new Date(start.getTime() + minutes * 60_000),
     title: t.confirmation.calendar.eventTitle(property.title),
@@ -140,7 +141,7 @@ function AddToCalendar({ result, property }: { result: BookingResult; property: 
     <div className="mt-6">
       <h3 className="text-sm font-semibold text-slate-700">{t.confirmation.calendar.title}</h3>
       <div className="mt-2 flex gap-2">
-        <a href={googleCalendarUrl(event)} target="_blank" rel="noopener noreferrer" className={linkClass}>
+        <a href={googleEventUrl(event)} target="_blank" rel="noopener noreferrer" className={linkClass}>
           Google
         </a>
         <a href={icsDataUrl(event)} download="viewing.ics" className={linkClass}>

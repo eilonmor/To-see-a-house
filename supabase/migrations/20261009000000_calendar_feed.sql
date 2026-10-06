@@ -40,10 +40,11 @@ begin
 end
 $$;
 
--- What the feed shows: every open-house day of the properties the link's
--- owner manages (the same rule as can_manage_property(), for that user rather
--- than auth.uid()), from 90 days back on, with its bookings. Times are
--- returned as instants (dates and times are stored in Israel time).
+-- What the feed shows: every open-house day, from 90 days back on, of the
+-- properties the link's owner manages, with its bookings. "Manages" is the
+-- rule in can_manage_property(), applied to the link's owner rather than
+-- auth.uid(): a change to one must be made to the other. Times are returned
+-- as instants (dates and times are stored in Israel time).
 -- Null when no link has this token. Only the edge function calls this.
 create or replace function public.calendar_feed_events(p_token text) returns jsonb
 language sql stable security definer set search_path = ''
@@ -80,3 +81,5 @@ $$;
 revoke execute on function public.create_calendar_feed() from public, anon;
 grant execute on function public.create_calendar_feed() to authenticated;
 revoke execute on function public.calendar_feed_events(text) from public, anon, authenticated;
+-- The calendar-feed edge function calls it as service_role.
+grant execute on function public.calendar_feed_events(text) to service_role;

@@ -4,13 +4,27 @@
 // (Owners subscribe to a live feed instead: see supabase/functions/calendar-feed.)
 
 export type CalendarEvent = {
-  /** Stable per booking, so adding it again (e.g. after changing the time) updates the event. */
+  /** The same for a booking before and after a time change: see visitUid(). */
   uid: string
   start: Date
   end: Date
   title: string
   details: string
   location: string
+}
+
+/**
+ * The event's id: one per visitor and property, as a visitor holds one booking
+ * per property. A booking moved to another time, even another day, keeps it,
+ * so Apple Calendar and Outlook update the event they have when the visitor
+ * adds it again. (The booking's own id changes when it moves to another day.)
+ * The phone is hashed, so the id doesn't show it.
+ */
+export function visitUid(propertyId: string, phoneKey: string): string {
+  // FNV-1a: only needs to be stable, not secret.
+  let hash = 0x811c9dc5
+  for (const char of phoneKey) hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193) >>> 0
+  return `${propertyId}-${hash.toString(16).padStart(8, '0')}@to-see-a-house-visit`
 }
 
 /** A date and time in Israel ('YYYY-MM-DD', 'HH:MM') as a moment. */
@@ -39,7 +53,8 @@ export function israelMoment(date: string, time: string): Date {
 /** 20261012T140000Z */
 const utc = (date: Date): string => date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
 
-export function googleCalendarUrl(event: CalendarEvent): string {
+/** Opens Google Calendar with the event filled in, ready to save. */
+export function googleEventUrl(event: CalendarEvent): string {
   const params = new URLSearchParams({
     action: 'TEMPLATE',
     text: event.title,
@@ -83,6 +98,8 @@ export function icsDataUrl(event: CalendarEvent): string {
     'BEGIN:VEVENT',
     `UID:${event.uid}`,
     `DTSTAMP:${utc(new Date())}`,
+    // Higher on every download, so a calendar that has this UID takes the new time.
+    `SEQUENCE:${Math.floor(Date.now() / 1000)}`,
     `DTSTART:${utc(event.start)}`,
     `DTEND:${utc(event.end)}`,
     `SUMMARY:${escapeText(event.title)}`,

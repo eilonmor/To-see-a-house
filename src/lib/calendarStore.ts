@@ -31,5 +31,5 @@ export const calendarFeedUrl = (token: string, lang: Lang) =>
 export const webcalUrl = (feedUrl: string) => feedUrl.replace(/^https?:/, 'webcal:')
 
 /** Opens Google Calendar's "add calendar from URL" with the feed filled in. */
-export const googleCalendarUrl = (feedUrl: string) =>
+export const googleSubscribeUrl = (feedUrl: string) =>
   `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(webcalUrl(feedUrl))}`
