@@ -13,6 +13,10 @@ export const LANGUAGES: Record<Lang, { label: string; dir: 'rtl' | 'ltr' }> = {
 // Hebrew is the source of truth: English must have exactly the same keys.
 const he = {
   appName: 'צפייה בדירה',
+  dialog: {
+    confirm: 'אישור',
+    cancel: 'חזרה',
+  },
   nav: {
     owners: 'כניסה לבעלי דירות',
     myProperties: 'הדירות שלי',
@@ -407,6 +411,10 @@ export type Translation = typeof he
 
 const en: Translation = {
   appName: 'Apartment Viewing',
+  dialog: {
+    confirm: 'Confirm',
+    cancel: 'Go back',
+  },
   nav: {
     owners: 'Owner login',
     myProperties: 'My properties',

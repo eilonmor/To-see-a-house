@@ -6,6 +6,7 @@ import { formatDate, israelDate } from '../lib/bookingStore'
 import { usePolledData } from '../hooks/usePolledData'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { useAccount } from './AccountGate'
+import { useConfirm } from './ConfirmDialog'
 import { Alert, Button, Card, Link, Loading, Redirect, Spinner } from './ui'
 
 /** The dashboard home: every property the user manages. */
@@ -74,11 +75,12 @@ export default function PropertyList() {
 function FreePlanNote() {
   const { t } = useI18n()
   const { reloadProfile } = useAccount()
+  const confirm = useConfirm()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   async function upgrade() {
-    if (!window.confirm(t.properties.confirmUpgrade)) return
+    if (!(await confirm(t.properties.confirmUpgrade))) return
     setBusy(true)
     setError('')
     try {

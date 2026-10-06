@@ -20,6 +20,7 @@ import { usePolledData } from '../hooks/usePolledData'
 import { navigate } from '../hooks/useRoute'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { useAccount } from './AccountGate'
+import { useConfirm } from './ConfirmDialog'
 import { Alert, Button, Card, CopyButton, Field, Link, Loading, Spinner } from './ui'
 import InstructionsEditor from './InstructionsEditor'
 import DayForm from './DayForm'
@@ -27,6 +28,7 @@ import DayForm from './DayForm'
 /** One property: share link, bookings per day, dates, details and instructions. */
 export default function PropertyEditor({ propertyId }: { propertyId: string }) {
   const { t, lang } = useI18n()
+  const confirm = useConfirm()
   const { profile, reloadProfile } = useAccount()
   // null while loading.
   const [property, setProperty] = useState<Property | null>(null)
@@ -49,7 +51,7 @@ export default function PropertyEditor({ propertyId }: { propertyId: string }) {
   const bookedCount = upcoming.reduce((n, d) => n + d.slots.filter((s) => d.bookings[s]).length, 0)
 
   async function act(id: string, confirmText: string, errorPrefix: string, action: () => Promise<void>) {
-    if (!window.confirm(confirmText)) return
+    if (!(await confirm(confirmText, { tone: 'danger' }))) return
     setBusy(id)
     setActionError('')
     try {
@@ -105,7 +107,7 @@ export default function PropertyEditor({ propertyId }: { propertyId: string }) {
   async function handleEditDay(day: AdminDay, next: NewDay) {
     const booked = Object.keys(day.bookings).length
     if (next.date !== day.date && booked > 0) {
-      if (!window.confirm(t.addDay.confirmMove(formatDate(day.date, lang), formatDate(next.date, lang), booked))) return
+      if (!(await confirm(t.addDay.confirmMove(formatDate(day.date, lang), formatDate(next.date, lang), booked)))) return
     }
     await updateDay(day.id, next)
     setEditingDayId(null)
@@ -113,7 +115,7 @@ export default function PropertyEditor({ propertyId }: { propertyId: string }) {
   }
 
   async function handleTransfer() {
-    if (!property || !window.confirm(t.editor.confirmTransfer(property.title))) return
+    if (!property || !(await confirm(t.editor.confirmTransfer(property.title), { tone: 'danger' }))) return
     setBusy('transfer')
     setActionError('')
     try {
@@ -126,7 +128,7 @@ export default function PropertyEditor({ propertyId }: { propertyId: string }) {
   }
 
   async function handleDeleteProperty() {
-    if (!property || !window.confirm(t.editor.confirmDelete(property.title))) return
+    if (!property || !(await confirm(t.editor.confirmDelete(property.title), { tone: 'danger' }))) return
     setBusy(property.id)
     setActionError('')
     try {

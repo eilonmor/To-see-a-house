@@ -20,6 +20,7 @@ import { usePolledData } from '../hooks/usePolledData'
 import { navigate } from '../hooks/useRoute'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { useAccount } from './AccountGate'
+import { useConfirm } from './ConfirmDialog'
 import { Alert, Button, Card, CopyButton, Field, Loading, Spinner } from './ui'
 
 /** /dashboard/agency: set up or join an agency, or manage the one the user is in. */
@@ -133,6 +134,7 @@ type AgencyData = { agency: Agency; members: Member[]; invites: Invite[] }
 
 function AgencyDetails({ orgId }: { orgId: string }) {
   const { t, lang } = useI18n()
+  const confirm = useConfirm()
   const { profile, reloadProfile } = useAccount()
   const isAdmin = profile.role === 'agency_admin'
   const [busy, setBusy] = useState<string | null>(null) // id of the member / invite being changed
@@ -155,7 +157,7 @@ function AgencyDetails({ orgId }: { orgId: string }) {
   }, [removed, reloadProfile])
 
   async function act(id: string, confirmText: string | null, errorPrefix: string, action: () => Promise<void>) {
-    if (confirmText && !window.confirm(confirmText)) return
+    if (confirmText && !(await confirm(confirmText, { tone: 'danger' }))) return
     setBusy(id)
     setActionError('')
     try {
@@ -183,7 +185,7 @@ function AgencyDetails({ orgId }: { orgId: string }) {
     t.agency.expires(formatDate(israelDate(new Date(invite.expiresAt)), lang, { day: 'numeric', month: 'long' }))
 
   async function handleLeave() {
-    if (!window.confirm(t.agency.confirmLeave(agency.name))) return
+    if (!(await confirm(t.agency.confirmLeave(agency.name), { tone: 'danger' }))) return
     setBusy('leave')
     setActionError('')
     try {
