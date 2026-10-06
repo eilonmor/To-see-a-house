@@ -23,8 +23,8 @@ export default function NewProperty() {
     setError('')
     try {
       const property = await createProperty(profile, values, profile.orgId ? owner : 'me')
-      // The free plan's 30-day clock starts now.
-      reloadProfile()
+      // The free plan's 30-day clock starts now. A failed reload shows in the gate.
+      reloadProfile().catch(() => {})
       navigate(`/dashboard/p/${property.id}`, { replace: true })
     } catch (err) {
       setError(errorText(err, t))

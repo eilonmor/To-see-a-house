@@ -27,8 +27,9 @@ export default function AgencyPage() {
   const { profile, reloadProfile } = useAccount()
 
   // The admin may have removed this agent since the profile was loaded.
+  // A failure shows in the gate.
   useEffect(() => {
-    reloadProfile()
+    reloadProfile().catch(() => {})
   }, [reloadProfile])
 
   return (
@@ -45,6 +46,8 @@ function NoAgency() {
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Created, but the profile couldn't be reloaded: creating again would fail.
+  const [created, setCreated] = useState(false)
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault()
@@ -52,10 +55,16 @@ function NoAgency() {
     setError('')
     try {
       await createAgency(name)
-      // The profile now has the agency, and this page shows it.
-      await reloadProfile()
     } catch (err) {
       setError(errorText(err, t))
+      setBusy(false)
+      return
+    }
+    try {
+      // The profile now has the agency, and this page shows it.
+      await reloadProfile()
+    } catch {
+      setCreated(true)
       setBusy(false)
     }
   }
@@ -88,7 +97,8 @@ function NoAgency() {
               required
             />
             {error && <Alert>{error}</Alert>}
-            <Button type="submit" className="w-full" disabled={!name.trim() || busy}>
+            {created && <Alert tone="info">{t.account.reloadAfterAction}</Alert>}
+            <Button type="submit" className="w-full" disabled={!name.trim() || busy || created}>
               {busy && <Spinner />} {t.agency.create}
             </Button>
           </form>
@@ -141,7 +151,7 @@ function AgencyDetails({ orgId }: { orgId: string }) {
   // Removed from the agency meanwhile: the profile no longer has it.
   const removed = error instanceof BookingError && error.code === 'agencyNotFound'
   useEffect(() => {
-    if (removed) reloadProfile()
+    if (removed) reloadProfile().catch(() => {}) // a failure shows in the gate
   }, [removed, reloadProfile])
 
   async function act(id: string, confirmText: string | null, errorPrefix: string, action: () => Promise<void>) {
@@ -178,9 +188,15 @@ function AgencyDetails({ orgId }: { orgId: string }) {
     setActionError('')
     try {
       await leaveAgency()
-      await reloadProfile()
     } catch (err) {
       setActionError(`${t.agency.leaveError} ${errorText(err, t)}`)
+      setBusy(null)
+      return
+    }
+    try {
+      await reloadProfile()
+    } catch {
+      setActionError(t.account.reloadAfterAction)
       setBusy(null)
     }
   }

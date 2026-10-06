@@ -41,7 +41,8 @@ function JoinPage({ code }: { code: string }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   // After joining, the profile has an agency: don't flash "already a member".
-  const [joined, setJoined] = useState(false)
+  // 'stale' when joined but the profile couldn't be reloaded.
+  const [joined, setJoined] = useState<false | true | 'stale'>(false)
 
   // The remembered invite brought the user here; it isn't needed any more.
   useEffect(() => forgetInvite(), [])
@@ -55,17 +56,23 @@ function JoinPage({ code }: { code: string }) {
     setError('')
     try {
       await acceptInvite(code)
-      setJoined(true)
-      await reloadProfile()
-      navigate('/dashboard/agency', { replace: true })
     } catch (err) {
       setError(`${t.join.joinError} ${errorText(err, t)}`)
       setBusy(false)
+      return
+    }
+    setJoined(true)
+    try {
+      await reloadProfile()
+      navigate('/dashboard/agency', { replace: true })
+    } catch {
+      setJoined('stale')
     }
   }
 
   let body
-  if (joined) body = <Loading label={t.dashboard.loading} />
+  if (joined === 'stale') body = <Alert tone="info">{t.account.reloadAfterAction}</Alert>
+  else if (joined) body = <Loading label={t.dashboard.loading} />
   else if (profile.orgId) {
     body = (
       <>

@@ -7,6 +7,11 @@ import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Alert, Button, Link, Loading } from './ui'
 import LoginForm from './LoginForm'
 
+/**
+ * `reloadProfile` throws when the profile can't be loaded, so that a flow
+ * waiting on it (e.g. after joining an agency) can stop and say so. The gate
+ * also shows the error above the page until a reload succeeds.
+ */
 type Account = { user: User; profile: Profile; reloadProfile: () => Promise<void> }
 
 const AccountContext = createContext<Account | null>(null)
@@ -44,11 +49,13 @@ export default function AccountGate({ children }: { children: ReactNode }) {
       setError(null)
     } catch (err) {
       setError(err)
+      throw err
     }
   }, [userId])
 
   useEffect(() => {
-    reloadProfile()
+    // Shown below: in place of the page, or above it once a profile has loaded.
+    reloadProfile().catch(() => {})
   }, [reloadProfile])
 
   if (session === undefined) return <Loading label={t.dashboard.loading} />
@@ -71,6 +78,13 @@ export default function AccountGate({ children }: { children: ReactNode }) {
   return (
     <AccountContext.Provider value={{ user, profile: current, reloadProfile }}>
       <AccountBar user={user} profile={current} />
+      {error != null && (
+        <div className="mt-4">
+          <Alert>
+            {t.account.reloadError} {errorText(error, t)}
+          </Alert>
+        </div>
+      )}
       {children}
     </AccountContext.Provider>
   )

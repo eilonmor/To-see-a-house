@@ -83,10 +83,17 @@ function FreePlanNote() {
     setError('')
     try {
       await upgradeToAgent()
-      // The profile is now an agent's: this note goes away.
-      await reloadProfile()
     } catch (err) {
       setError(`${t.properties.upgradeError} ${errorText(err, t)}`)
+      setBusy(false)
+      return
+    }
+    try {
+      // The profile is now an agent's: this note goes away.
+      await reloadProfile()
+    } catch {
+      // Upgraded, but this page still shows the free plan. (Upgrading again is harmless.)
+      setError(t.account.reloadAfterAction)
       setBusy(false)
     }
   }

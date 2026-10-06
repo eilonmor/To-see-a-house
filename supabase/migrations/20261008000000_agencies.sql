@@ -1,7 +1,9 @@
 -- Phase 4 (agencies): what the agency screens need on top of the agency
 -- functions in 20261004000000_init.sql, and property ownership for agency
 -- members (choose at creation, or hand an own property to the agency).
--- Apply after 20261007000001_revoke_guest_anon.sql. Safe to run again.
+-- Apply after 20261007000000_guest_otp.sql. It doesn't depend on
+-- 20261007000001_revoke_guest_anon.sql, so it can go in while that one is
+-- held back (see README). Safe to run again.
 
 -- An empty name now raises a code the app can translate, instead of the
 -- organizations check constraint's generic error.
@@ -73,7 +75,9 @@ declare
   prof public.profiles;
   new_id uuid;
 begin
-  select * into prof from public.profiles where id = auth.uid();
+  -- Locked, so leaving or being removed meanwhile (detach_agent) waits for
+  -- this, or this sees its result.
+  select * into prof from public.profiles where id = auth.uid() for update;
   if prof.org_id is null then
     raise exception 'not_in_agency';
   end if;
@@ -101,7 +105,9 @@ as $$
 declare
   prof public.profiles;
 begin
-  select * into prof from public.profiles where id = auth.uid();
+  -- Locked, so leaving or being removed meanwhile (detach_agent) waits for
+  -- this, or this sees its result.
+  select * into prof from public.profiles where id = auth.uid() for update;
   if prof.org_id is null then
     raise exception 'not_in_agency';
   end if;
@@ -117,6 +123,24 @@ begin
   end if;
 end
 $$;
+
+-- Locks the agent's profile before removing their assignments: a property
+-- passed to the agency at the same moment (transfer_property_to_agency) then
+-- either finishes first and its assignment is removed here, or sees that the
+-- agent is no longer a member. Before, the assignment could outlive the
+-- membership, and the admin couldn't remove it.
+create or replace function public.detach_agent(agent uuid, org uuid) returns void
+language sql security definer set search_path = ''
+as $$
+  select 1 from public.profiles where id = agent for update;
+
+  delete from public.property_agents pa
+  using public.properties p
+  where pa.property_id = p.id and pa.agent_id = agent and p.owner_org_id = org;
+
+  update public.profiles set org_id = null where id = agent and org_id = org;
+$$;
+revoke execute on function public.detach_agent(uuid, uuid) from public, anon, authenticated;
 
 revoke execute on function
   public.preview_agency_invite(text),

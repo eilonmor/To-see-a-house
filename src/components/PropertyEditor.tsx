@@ -131,7 +131,7 @@ export default function PropertyEditor({ propertyId }: { propertyId: string }) {
     setActionError('')
     try {
       await deleteProperty(property.id)
-      reloadProfile()
+      reloadProfile().catch(() => {}) // a failure shows in the gate
       navigate('/dashboard', { replace: true })
     } catch (err) {
       setActionError(`${t.editor.deleteError} ${errorText(err, t)}`)

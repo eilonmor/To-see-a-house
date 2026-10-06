@@ -188,6 +188,8 @@ const he = {
     plan: { personal: 'תוכנית חינמית', agent: 'מתווך', agency_admin: 'מנהל סוכנות' },
     logout: 'יציאה',
     loadError: 'לא ניתן לטעון את החשבון:',
+    reloadError: 'לא ניתן לטעון מחדש את פרטי החשבון, ולכן ייתכן שהדף לא מעודכן. רעננו את הדף:',
+    reloadAfterAction: 'הפעולה בוצעה, אבל לא ניתן לטעון מחדש את פרטי החשבון. רעננו את הדף כדי לראות את השינוי.',
   },
   agency: {
     nav: 'הסוכנות',
@@ -580,6 +582,8 @@ const en: Translation = {
     plan: { personal: 'Free plan', agent: 'Agent', agency_admin: 'Agency admin' },
     logout: 'Log out',
     loadError: 'Could not load your account:',
+    reloadError: "Your account details couldn't be reloaded, so this page may be out of date. Refresh the page:",
+    reloadAfterAction: "That worked, but your account details couldn't be reloaded. Refresh the page to see the change.",
   },
   agency: {
     nav: 'Agency',
