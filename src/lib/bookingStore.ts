@@ -11,7 +11,7 @@ import { BookingError, callFunction, run } from './supabase'
 export { BookingError } from './supabase'
 
 /** A viewing day as the visitor page sees it. Times are 'HH:MM'. */
-export type PublicDay = { id: string; date: string; slots: string[]; taken: string[] }
+export type PublicDay = { id: string; date: string; slots: string[]; taken: string[]; slotMinutes: number }
 
 export type PublicProperty = { id: string; title: string; address: string; days: PublicDay[] }
 
@@ -86,7 +86,13 @@ export async function fetchProperty(slug: string): Promise<PublicProperty> {
   if (!data) throw new BookingError('propertyNotFound')
   return {
     ...data,
-    days: data.days.map((d) => ({ id: d.id, date: d.date, slots: daySlots(d), taken: d.taken.map(hhmm) })),
+    days: data.days.map((d) => ({
+      id: d.id,
+      date: d.date,
+      slots: daySlots(d),
+      taken: d.taken.map(hhmm),
+      slotMinutes: d.slot_minutes,
+    })),
   }
 }
 

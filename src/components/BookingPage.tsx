@@ -251,6 +251,7 @@ export default function BookingPage({ slug }: { slug: string }) {
       {step === 'done' && result && (
         <Confirmation
           result={result}
+          property={property}
           cancelling={cancelling}
           cancelError={cancelError}
           onChangeTime={startReschedule}

@@ -217,6 +217,20 @@ export type Database = {
         Update: Partial<Database['public']['Tables']['otp_requests']['Insert']>
         Relationships: []
       }
+      calendar_feeds: {
+        Row: {
+          user_id: string
+          token: string
+          created_at: string
+        }
+        Insert: {
+          user_id: string
+          token: string
+          created_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['calendar_feeds']['Insert']>
+        Relationships: [Relationship<'calendar_feeds_user_id_fkey', 'user_id', 'profiles'>]
+      }
     }
     Views: { [_ in never]: never }
     Functions: {
@@ -250,6 +264,8 @@ export type Database = {
       leave_agency: { Args: Record<PropertyKey, never>; Returns: undefined }
       remove_agent: { Args: { p_agent_id: string }; Returns: undefined }
       become_agent: { Args: Record<PropertyKey, never>; Returns: undefined }
+      create_calendar_feed: { Args: Record<PropertyKey, never>; Returns: string }
+      calendar_feed_events: { Args: { p_token: string }; Returns: Json }
     }
     Enums: {
       user_role: 'personal' | 'agent' | 'agency_admin'

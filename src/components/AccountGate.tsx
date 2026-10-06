@@ -96,6 +96,7 @@ function AccountBar({ user, profile }: { user: User; profile: Profile }) {
   const links = [
     { href: '/dashboard', label: t.nav.myProperties },
     { href: '/dashboard/agency', label: t.agency.nav },
+    { href: '/dashboard/calendar', label: t.calendar.nav },
   ]
 
   async function logout() {

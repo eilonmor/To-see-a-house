@@ -52,7 +52,7 @@ Migration: [supabase/migrations/20261004000000_init.sql](supabase/migrations/202
 4. **Agencies.** Create agency, invite link/code, assign agents, leave/remove agent. *Code done: apply `…_agencies.sql`.* Not yet: handing the agency to another admin, deleting an agency.
 5. **Payments.** Checkout + webhook edge functions update `subscription_status`. Agents and agencies need an active subscription to create properties; on a lapse, keep their data. *Done last: waiting for a contract with the payment provider. Until then agent and agency accounts are free.*
 6. **Launch on Cloudflare.** Buy the domain, move hosting from Vercel to Cloudflare Pages, connect the domain, delete `netlify.toml` / `vercel.json`. *Done.*
-7. **Calendar sync.** First a private ICS subscription link per user (works with Google, Apple, Outlook; read-only, refreshed by the calendar app). Later, if needed, two-way Google / Outlook sync via OAuth, with tokens stored in Supabase and a scheduled edge function. Both run in Supabase, not on the host.
+7. **Calendar sync.** First a private ICS subscription link per user (works with Google, Apple, Outlook; read-only, refreshed by the calendar app). Later, if needed, two-way Google / Outlook sync via OAuth, with tokens stored in Supabase and a scheduled edge function. Both run in Supabase, not on the host. *ICS link: code done: apply `…_calendar_feed.sql`, deploy `calendar-feed`, optionally set `APP_URL`.*
 
 ## Open issues
 
