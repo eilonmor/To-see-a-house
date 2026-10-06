@@ -29,8 +29,10 @@ Deno.serve(
       await sendSms(key, message(code))
     } catch (err) {
       console.error(err)
-      // An unsent code shouldn't count toward the guest's limits.
-      await admin.from('otp_requests').delete().eq('id', id)
+      // An unsent code shouldn't count toward the guest's limits, and removing
+      // it makes the code the guest already has the newest one again.
+      const { error } = await admin.from('otp_requests').delete().eq('id', id)
+      if (error) console.error(`Couldn't remove unsent code ${id}: ${error.message}`)
       throw new ApiError('sms_failed', 502)
     }
     return {}

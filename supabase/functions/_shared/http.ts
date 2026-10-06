@@ -43,9 +43,13 @@ export function handler(fn: (body: Body, req: Request) => Promise<unknown>) {
   }
 }
 
-/** The caller's IP address, or null if the header is missing or malformed. */
+/**
+ * The caller's IP address, or null if unknown (the per-IP limit is then skipped).
+ * Supabase sits behind Cloudflare, which sets cf-connecting-ip itself. Not
+ * x-forwarded-for: the caller can put any address at its start.
+ */
 export function clientIp(req: Request): string | null {
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? ''
+  const ip = req.headers.get('cf-connecting-ip')?.trim() ?? ''
   return /^[0-9a-fA-F:.]{3,45}$/.test(ip) ? ip : null
 }
 

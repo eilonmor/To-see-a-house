@@ -42,6 +42,9 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
    in order (`…_init.sql`, `…_accounts.sql`, `…_phone_10_digits.sql`, `…_guest_otp.sql`), or with the Supabase CLI.
    Hold back `…_revoke_guest_anon.sql` until the edge functions (step 8) and the new
    frontend are live: it cuts off the browser's direct access to the booking functions.
+   `db push` applies every pending file, including that one, so on an existing
+   project that still runs the old frontend, use the SQL Editor for `…_guest_otp.sql`
+   instead. On a new project, `db push` is fine.
    ```bash
    npx supabase login
    npx supabase link --project-ref <your-project-ref>
@@ -87,8 +90,7 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
    ```
    Secrets take effect without redeploying. Changing `GUEST_TOKEN_SECRET` logs out
    every visitor (they verify again).
-9. Once the new frontend is deployed, apply `…_revoke_guest_anon.sql` (SQL Editor, or
-   `npx supabase db push`).
+9. Once the new frontend is deployed, apply `…_revoke_guest_anon.sql` in the SQL Editor.
 
 #### SMS limits
 
@@ -236,9 +238,13 @@ npx supabase gen types typescript --project-id <project-ref> > src/lib/database.
   through the `guest-bookings` edge function, which acts only on the phone number
   in a token signed after a correct SMS code. Tokens can't be revoked one by one:
   a token stays valid for 30 days on the device that verified.
-- **Old 9-digit landline numbers** (imported from jsonbin.io) can't receive an SMS
-  code, so those visitors can no longer manage their bookings online. The owner
-  can still release them in the property editor.
+- **Only mobile numbers (05X) can verify.** Visitors who booked earlier with
+  another number (a 9-digit landline imported from jsonbin.io, or a 10-digit
+  07X number) can't receive an SMS code, so they can no longer view, change or
+  cancel those bookings online. The owner can still release them in the property editor.
+- **The daily total of 1,000 codes is shared.** Someone sending requests from many
+  IP addresses could use it up and block codes for everyone until the next day.
+  The cap protects the SMS bill; raise it in `public.issue_otp()` if real traffic needs more.
 - **Password-reset and sign-up confirmation links work only in the browser that
   asked for them** until the email templates are changed (step 5 above), which
   needs a paid Supabase plan. Opened elsewhere, the reset page says the link is

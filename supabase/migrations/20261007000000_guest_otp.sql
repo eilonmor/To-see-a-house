@@ -8,7 +8,9 @@ create index if not exists otp_requests_created_at_idx on public.otp_requests (c
 create index if not exists otp_requests_ip_idx on public.otp_requests (ip, created_at);
 
 -- Records a new code for an Israeli mobile number (05X, 10 digits), after
--- checking the send limits. A new code replaces the phone's earlier ones.
+-- checking the send limits. Only the phone's newest code is accepted (see
+-- check_otp), but earlier ones aren't expired here: if the SMS fails, send-otp
+-- deletes the new row and the code the guest already has works again.
 -- Used codes stay in the table (expired) so they still count toward the limits.
 create or replace function public.issue_otp(p_phone_key text, p_code_hash text, p_ip inet)
 returns uuid
@@ -20,8 +22,9 @@ begin
   if p_phone_key !~ '^05[0-9]{8}$' then
     raise exception 'invalid_mobile';
   end if;
-  -- One request per phone at a time, so concurrent requests can't both pass the limits.
-  perform pg_advisory_xact_lock(hashtext('otp:' || p_phone_key));
+  -- One request at a time, so concurrent requests can't both pass the limits
+  -- (the per-IP and total ones too). Codes are rare enough for this to be cheap.
+  perform pg_advisory_xact_lock(hashtext('issue_otp'));
 
   if exists (select 1 from public.otp_requests
              where phone_key = p_phone_key and created_at > now() - interval '60 seconds') then
@@ -37,9 +40,6 @@ begin
     raise exception 'otp_rate_limited';
   end if;
 
-  update public.otp_requests set expires_at = now()
-  where phone_key = p_phone_key and expires_at > now();
-
   delete from public.otp_requests where created_at < now() - interval '2 days';
 
   insert into public.otp_requests (phone_key, code_hash, expires_at, ip)
@@ -49,9 +49,11 @@ begin
 end
 $$;
 
--- Checks a code against the phone's latest unexpired one. Returns 'ok',
+-- Checks a code against the phone's newest unexpired one. Returns 'ok',
 -- 'otp_wrong_code', 'otp_too_many_attempts' or 'otp_expired' instead of
 -- raising, so the attempt counter is saved. Each code allows 5 tries.
+-- Success or a 5th wrong try expires all the phone's codes, so an older code
+-- can't take over and give extra tries.
 create or replace function public.check_otp(p_phone_key text, p_code_hash text)
 returns text
 language plpgsql security definer set search_path = ''
@@ -70,14 +72,17 @@ begin
   end if;
 
   if req.code_hash <> p_code_hash then
-    update public.otp_requests
-    set attempts = attempts + 1,
-        expires_at = case when attempts + 1 >= 5 then now() else expires_at end
-    where id = req.id;
-    return case when req.attempts + 1 >= 5 then 'otp_too_many_attempts' else 'otp_wrong_code' end;
+    update public.otp_requests set attempts = attempts + 1 where id = req.id;
+    if req.attempts + 1 < 5 then
+      return 'otp_wrong_code';
+    end if;
+    update public.otp_requests set expires_at = now()
+    where phone_key = p_phone_key and expires_at > now();
+    return 'otp_too_many_attempts';
   end if;
 
-  update public.otp_requests set expires_at = now() where id = req.id;
+  update public.otp_requests set expires_at = now()
+  where phone_key = p_phone_key and expires_at > now();
   update public.guests set verified_at = now() where phone_key = p_phone_key;
   return 'ok';
 end

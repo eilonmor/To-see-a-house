@@ -102,7 +102,8 @@ export default function OtpForm({ phone, busy, error, onVerify, onResend, onBack
           <button
             type="button"
             onClick={handleResend}
-            disabled={resending}
+            // Not while a code is being checked: the new code would replace it.
+            disabled={resending || busy}
             className="inline-flex items-center gap-1 font-medium text-indigo-600 hover:underline disabled:opacity-50"
           >
             {resending && <Spinner />} {t.otp.resend}
