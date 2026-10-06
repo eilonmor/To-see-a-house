@@ -1,0 +1,14 @@
+# Supabase CLI settings for deploying the edge functions
+# (npx supabase functions deploy). Settings not listed keep their defaults.
+project_id = "to-see-a-house"
+
+# Guests have no Supabase session: these functions check their own token
+# (see functions/_shared/token.ts), so the gateway's JWT check is off.
+[functions.send-otp]
+verify_jwt = false
+
+[functions.verify-otp]
+verify_jwt = false
+
+[functions.guest-bookings]
+verify_jwt = false
