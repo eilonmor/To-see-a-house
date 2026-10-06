@@ -18,6 +18,7 @@ import {
 import { usePolledData } from '../hooks/usePolledData'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Alert, Card, Spinner } from './ui'
+import { useConfirm } from './ConfirmDialog'
 import DetailsForm from './DetailsForm'
 import OtpForm from './OtpForm'
 import SlotPicker from './SlotPicker'
@@ -29,6 +30,7 @@ const STEP_INDEX: Record<Step, number> = { details: 0, verify: 0, pick: 1, done:
 
 export default function BookingPage({ slug }: { slug: string }) {
   const { t, lang } = useI18n()
+  const confirm = useConfirm()
   const load = useCallback(() => fetchProperty(slug), [slug])
   const { data: property, loading, error: loadError, refresh } = usePolledData<PublicProperty | null>(load, null)
   const [step, setStep] = useState<Step>('details')
@@ -149,7 +151,7 @@ export default function BookingPage({ slug }: { slug: string }) {
   }
 
   async function handleCancel() {
-    if (!result || !window.confirm(t.confirmation.confirmCancel(when(result)))) return
+    if (!result || !(await confirm(t.confirmation.confirmCancel(when(result)), { tone: 'danger', confirmLabel: t.confirmation.cancel }))) return
     setCancelling(true)
     setCancelError('')
     try {

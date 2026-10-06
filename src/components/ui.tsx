@@ -1,6 +1,6 @@
 // Small shared UI primitives.
 
-import { useEffect, useState, type AnchorHTMLAttributes, type ButtonHTMLAttributes, type InputHTMLAttributes, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useState, type AnchorHTMLAttributes, type ComponentProps, type InputHTMLAttributes, type MouseEvent, type ReactNode } from 'react'
 import { navigate } from '../hooks/useRoute'
 
 export function Card({ className = '', children }: { className?: string; children: ReactNode }) {
@@ -11,13 +11,14 @@ export function Card({ className = '', children }: { className?: string; childre
   )
 }
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' }
+type ButtonProps = ComponentProps<'button'> & { variant?: 'primary' | 'secondary' | 'danger' | 'dangerSolid' }
 
 export function Button({ variant = 'primary', className = '', ...props }: ButtonProps) {
   const styles = {
     primary: 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-indigo-300',
     secondary: 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 disabled:text-slate-400',
     danger: 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-50 disabled:text-rose-300',
+    dangerSolid: 'bg-rose-600 text-white hover:bg-rose-700 disabled:bg-rose-300 focus-visible:ring-rose-500',
   }
   return (
     <button
