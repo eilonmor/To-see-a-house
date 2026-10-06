@@ -6,8 +6,10 @@ import {
   fetchProperty,
   findGuestBookings,
   formatDate,
-  isValidPhone,
+  isVerified,
   rescheduleBooking,
+  sendCode,
+  verifyCode,
   type GuestBooking,
   type GuestDetails,
   type PublicProperty,
@@ -17,11 +19,13 @@ import { usePolledData } from '../hooks/usePolledData'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Alert, Card, Spinner } from './ui'
 import DetailsForm from './DetailsForm'
+import OtpForm from './OtpForm'
 import SlotPicker from './SlotPicker'
 import Confirmation, { type BookingResult } from './Confirmation'
 
-type Step = 'details' | 'pick' | 'done'
-const STEP_INDEX: Record<Step, number> = { details: 0, pick: 1, done: 2 }
+// 'verify' (the SMS code) is part of the first step in the stepper.
+type Step = 'details' | 'verify' | 'pick' | 'done'
+const STEP_INDEX: Record<Step, number> = { details: 0, verify: 0, pick: 1, done: 2 }
 
 export default function BookingPage({ slug }: { slug: string }) {
   const { t, lang } = useI18n()
@@ -30,6 +34,7 @@ export default function BookingPage({ slug }: { slug: string }) {
   const [step, setStep] = useState<Step>('details')
   const [details, setDetails] = useState<GuestDetails>({ name: '', phone: '' })
   const [checking, setChecking] = useState(false)
+  const [verifyError, setVerifyError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   // 'new' = first booking for this phone; 'reschedule' = moving an existing booking.
@@ -40,11 +45,43 @@ export default function BookingPage({ slug }: { slug: string }) {
 
   const when = ({ date, slot }: { date: string; slot: string }) => `${formatDate(date, lang)} ${slot}`
 
-  // The phone number is the visitor's identity: if it already has a booking,
-  // show that booking (with the option to change the time) instead of booking again.
+  // The phone number is the visitor's identity, so they first prove it's theirs
+  // with an SMS code (skipped if this browser already did).
   async function handleDetails(d: GuestDetails) {
     setDetails(d)
     setSubmitError('')
+    if (isVerified(d.phone)) {
+      await lookUp(d)
+      return
+    }
+    setChecking(true)
+    try {
+      await sendCode(d.phone, lang)
+      setVerifyError('')
+      setStep('verify')
+    } catch (err) {
+      setSubmitError(errorText(err, t))
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  async function handleVerify(code: string) {
+    setChecking(true)
+    setVerifyError('')
+    try {
+      await verifyCode(details.phone, code)
+    } catch (err) {
+      setVerifyError(errorText(err, t))
+      setChecking(false)
+      return
+    }
+    await lookUp(details)
+  }
+
+  // If the phone already has a booking, show it (with the option to change the
+  // time) instead of booking again.
+  async function lookUp(d: GuestDetails) {
     setChecking(true)
     let existing: GuestBooking[]
     try {
@@ -52,7 +89,13 @@ export default function BookingPage({ slug }: { slug: string }) {
     } catch (err) {
       // Stop here: booking without knowing about an existing booking would
       // silently move it (the database moves a phone's booking within a day).
-      setSubmitError(`${t.details.lookupError} ${errorText(err, t)}`)
+      // The details form shows the error; submitting it again retries.
+      setSubmitError(
+        err instanceof BookingError && err.code === 'verificationRequired'
+          ? errorText(err, t)
+          : `${t.details.lookupError} ${errorText(err, t)}`,
+      )
+      setStep('details')
       return
     } finally {
       setChecking(false)
@@ -60,12 +103,20 @@ export default function BookingPage({ slug }: { slug: string }) {
     if (existing.length > 0) {
       setResult({ ...existing[0], phone: d.phone, kind: 'existing' })
       setStep('done')
-    } else if (!isValidPhone(d.phone)) {
-      // A 9-digit number only reaches the bookings it already has.
-      setSubmitError(t.details.phoneError)
     } else {
       setMode('new')
       setStep('pick')
+    }
+  }
+
+  // An expired or rejected token sends the visitor back to the details form
+  // to verify again; other errors show `message` where they are.
+  function handleGuestError(err: unknown, message: string, show: (text: string) => void = setSubmitError) {
+    if (err instanceof BookingError && err.code === 'verificationRequired') {
+      setSubmitError(errorText(err, t))
+      setStep('details')
+    } else {
+      show(message)
     }
   }
 
@@ -83,7 +134,7 @@ export default function BookingPage({ slug }: { slug: string }) {
       }
       setStep('done')
     } catch (err) {
-      setSubmitError(errorText(err, t))
+      handleGuestError(err, errorText(err, t))
     } finally {
       setSubmitting(false)
       refresh()
@@ -106,7 +157,7 @@ export default function BookingPage({ slug }: { slug: string }) {
       setResult({ ...result, kind: 'cancelled' })
       refresh()
     } catch (err) {
-      setCancelError(`${t.confirmation.cancelError} ${errorText(err, t)}`)
+      handleGuestError(err, `${t.confirmation.cancelError} ${errorText(err, t)}`, setCancelError)
     } finally {
       setCancelling(false)
     }
@@ -163,6 +214,20 @@ export default function BookingPage({ slug }: { slug: string }) {
           )}
           <DetailsForm initial={details} busy={checking} onSubmit={handleDetails} />
         </>
+      )}
+
+      {step === 'verify' && (
+        <OtpForm
+          phone={details.phone}
+          busy={checking}
+          error={verifyError}
+          onVerify={handleVerify}
+          onResend={() => sendCode(details.phone, lang)}
+          onBack={() => {
+            setVerifyError('')
+            setStep('details')
+          }}
+        />
       )}
 
       {step === 'pick' && (

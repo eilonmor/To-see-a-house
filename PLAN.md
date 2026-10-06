@@ -7,7 +7,7 @@
 | Hosting | Cloudflare Pages (Vercel until launch) | Free plan allows commercial use (Vercel Hobby does not), unlimited bandwidth, servers in Israel |
 | Domain | Own domain, DNS on Cloudflare | `.com` bought on Cloudflare at cost; `.co.il` bought from an Israeli registrar with nameservers pointed to Cloudflare. Free HTTPS and email forwarding (`info@…`) |
 | Backend | Supabase, Frankfurt region | Auth, Postgres, row-level security, edge functions. Replaces jsonbin.io |
-| Guest verification | SMS / WhatsApp OTP via an Israeli SMS gateway or Twilio Verify | Cheaper than Firebase phone auth ($0.20/SMS to Israel) |
+| Guest verification | SMS OTP via 019 SMS (codes generated and checked by our own edge functions) | ≈ ₪0.024 per SMS vs ≈ $0.22 per Twilio Verify check. Switching provider is one file (`supabase/functions/_shared/sms.ts`). WhatsApp (019, ₪0.075) can be added later |
 | Payments | Israeli provider (Grow or Cardcom) | Stripe doesn't support Israeli merchants; these issue tax invoices |
 
 ## Users
@@ -29,7 +29,9 @@
 2. If the browser holds a valid server-signed token for that phone, skip to 5.
 3. `send-otp` edge function sends a code (rate-limited per phone and IP; Israeli numbers only).
 4. `verify-otp` checks it and returns a signed token (phone + 30-day expiry), stored in localStorage.
-5. `create-booking` checks the token and books. Cancel / reschedule use the same token.
+5. `guest-bookings` checks the token and finds / books / reschedules / cancels on the token's phone.
+
+Only Israeli mobile numbers (05X) can verify. Limits live in `public.issue_otp()`.
 
 ## Database
 
@@ -44,7 +46,7 @@ Migration: [supabase/migrations/20261004000000_init.sql](supabase/migrations/202
 
 1. **Supabase foundation.** Apply the migration. Replace `src/lib/bookingStore.js` with Supabase calls and the fixed `TIME_SLOTS` with `visit_days`. Replace the hard-coded admin password with Supabase login. Import the current jsonbin bookings once.
 2. **Accounts.** Sign-up (personal / agent), login, property list, property and date editor, public `/p/<slug>` page.
-3. **Guest OTP.** Edge functions + SMS/WhatsApp provider + signed token. Revoke anon access to the `book_guest_slot` / `reschedule_guest_booking` / `cancel_guest_booking` / `find_guest_bookings` functions.
+3. **Guest OTP.** Edge functions + SMS/WhatsApp provider + signed token. Revoke anon access to the `book_guest_slot` / `reschedule_guest_booking` / `cancel_guest_booking` / `find_guest_bookings` functions. *Code done; waiting for the 019 SMS account (until then `SMS_PROVIDER=log`).*
 4. **Agencies.** Create agency, invite link/code, assign agents, leave/remove agent.
 5. **Payments.** Checkout + webhook edge functions update `subscription_status`. Agents and agencies need an active subscription to create properties; on a lapse, keep their data.
 6. **Launch on Cloudflare.** Must be done before phase 5 goes live (charging users on Vercel Hobby isn't allowed): buy the domain, move hosting from Vercel to Cloudflare Pages, connect the domain, delete `netlify.toml`.

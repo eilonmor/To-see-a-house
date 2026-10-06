@@ -12,9 +12,11 @@ See [PLAN.md](PLAN.md) for where the project is going.
 - **Visitor page** (`/p/<slug>`, or `/` for the property in `VITE_PROPERTY_SLUG`):
   the visitor enters their full name and phone number, then picks a viewing day
   and a free time slot. Booked slots are greyed out and can't be picked.
-- **The phone number is the visitor's identity.** A returning visitor who enters
-  the same number, even written as `+972 50…` instead of `050…`, sees their
-  existing booking instead of the slot grid. Only Israeli numbers are accepted.
+- **The phone number is the visitor's identity.** Visitors prove it's theirs with
+  a 6-digit SMS code; the browser then remembers the number as verified for 30
+  days. A returning visitor who enters the same number, even written as
+  `+972 50…` instead of `050…`, sees their existing booking instead of the slot
+  grid. Only Israeli mobile numbers (05X) are accepted.
 - **Changing the arrival time.** The confirmation screen has a *Change arrival
   time* button. Nothing changes until the visitor picks another free time and
   presses *Approve change*. The old time is freed only after the new one is saved.
@@ -37,7 +39,12 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
 1. Create a project at <https://supabase.com> (region: Frankfurt).
 2. **Apply the database schema.** Either paste each file in
    [`supabase/migrations/`](supabase/migrations/) into **SQL Editor** and run them
-   in order (`…_init.sql`, `…_accounts.sql`, then `…_phone_10_digits.sql`), or with the Supabase CLI:
+   in order (`…_init.sql`, `…_accounts.sql`, `…_phone_10_digits.sql`, `…_guest_otp.sql`), or with the Supabase CLI.
+   Hold back `…_revoke_guest_anon.sql` until the edge functions (step 8) and the new
+   frontend are live: it cuts off the browser's direct access to the booking functions.
+   `db push` applies every pending file, including that one, so on an existing
+   project that still runs the old frontend, use the SQL Editor for `…_guest_otp.sql`
+   instead. On a new project, `db push` is fine.
    ```bash
    npx supabase login
    npx supabase link --project-ref <your-project-ref>
@@ -67,6 +74,30 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
    error page ("provider is not enabled").
 7. Copy the **Project URL** and the **anon / publishable key** from
    **Project Settings → API**.
+8. **Deploy the visitor edge functions** (SMS codes and bookings, see
+   [`supabase/functions/`](supabase/functions/)). Set their secrets, then deploy:
+   ```bash
+   npx supabase secrets set GUEST_TOKEN_SECRET=$(openssl rand -base64 48)
+   npx supabase secrets set SMS_PROVIDER=log     # codes go to the function log; see below
+   npx supabase functions deploy send-otp verify-otp guest-bookings
+   ```
+   With `SMS_PROVIDER=log`, no SMS is sent: read the code in **Edge Functions →
+   send-otp → Logs**. For real SMS through [019 SMS](https://www.019sms.co.il):
+   create an API token in their dashboard (**Settings → API Token Management**;
+   tokens expire, so note the date) and register a sender name, then:
+   ```bash
+   npx supabase secrets set SMS_PROVIDER=019 SMS_019_USERNAME=<username>      SMS_019_TOKEN=<api token> SMS_019_SOURCE=<sender, up to 11 English letters/digits>
+   ```
+   Secrets take effect without redeploying. Changing `GUEST_TOKEN_SECRET` logs out
+   every visitor (they verify again).
+9. Once the new frontend is deployed, apply `…_revoke_guest_anon.sql` in the SQL Editor.
+
+#### SMS limits
+
+Set in `public.issue_otp()` ([`…_guest_otp.sql`](supabase/migrations/20261007000000_guest_otp.sql)):
+one code per phone per minute and 15 per day, 10 per IP address per hour, and
+1,000 in total per day (a cap on the SMS bill). A code is valid for 10 minutes
+and allows 5 tries.
 
 ### Environment variables
 
@@ -76,6 +107,16 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
 | `VITE_SUPABASE_ANON_KEY`    | yes      | Anon key. Public by design; row-level security protects data |
 | `VITE_PROPERTY_SLUG`        | no       | The property shown at `/`                                    |
 | `SUPABASE_SERVICE_ROLE_KEY` | import   | Only for the one-time jsonbin import. Never prefix with `VITE_` |
+
+Edge function secrets (set with `npx supabase secrets set`, never in `.env`):
+
+| Secret               | Description                                                         |
+| -------------------- | ------------------------------------------------------------------- |
+| `GUEST_TOKEN_SECRET` | 32+ random characters. Signs visitor tokens and hashes SMS codes    |
+| `SMS_PROVIDER`       | `019` (real SMS) or `log` (development: code in the function log)  |
+| `SMS_019_USERNAME`   | 019 SMS username                                                    |
+| `SMS_019_TOKEN`      | 019 SMS API token                                                   |
+| `SMS_019_SOURCE`     | Sender name shown on the SMS, up to 11 English letters or digits    |
 
 ---
 
@@ -148,7 +189,7 @@ src/
 ├── lib/
 │   ├── supabase.ts            # Supabase client, error codes → BookingError
 │   ├── database.types.ts      # types for the database schema
-│   ├── bookingStore.ts        # visitor API (database functions), slot/date/phone helpers
+│   ├── bookingStore.ts        # visitor API (SMS code, edge functions), slot/date/phone helpers
 │   ├── auth.ts                # sign-up, login, password reset, profile
 │   └── adminStore.ts          # owner API: properties, days, bookings
 ├── hooks/
@@ -161,6 +202,7 @@ src/
     ├── Home.tsx               # site root: sign up / log in
     ├── BookingPage.tsx        # visitor flow: details → slot → confirmation
     ├── DetailsForm.tsx        # name + phone form with validation
+    ├── OtpForm.tsx            # SMS code entry, resend
     ├── SlotPicker.tsx         # day tabs + time-slot grid
     ├── Confirmation.tsx       # "your booking is registered" screen
     ├── LoginForm.tsx          # email + password form
@@ -174,6 +216,7 @@ src/
     ├── DayForm.tsx            # add or edit a viewing day
     └── InstructionsEditor.tsx # post-booking instructions
 supabase/migrations/           # database schema, rules and row-level security
+supabase/functions/            # edge functions: send-otp, verify-otp, guest-bookings
 scripts/import-jsonbin.mjs     # one-time import of the old jsonbin.io data
 ```
 
@@ -191,8 +234,17 @@ npx supabase gen types typescript --project-id <project-ref> > src/lib/database.
   for the same slot, and one phone number can hold one booking per day.
 - **Visitors can't read each other's data.** The visitor page only reaches the
   database through functions that return taken slots, never names or phone numbers.
-- **No visitor verification yet.** Anyone who knows a visitor's phone number can
-  see, change or cancel that visitor's booking. Phase 3 adds an SMS/WhatsApp code.
+- **Visitors verify their phone by SMS.** Booking, changing and cancelling go
+  through the `guest-bookings` edge function, which acts only on the phone number
+  in a token signed after a correct SMS code. Tokens can't be revoked one by one:
+  a token stays valid for 30 days on the device that verified.
+- **Only mobile numbers (05X) can verify.** Visitors who booked earlier with
+  another number (a 9-digit landline imported from jsonbin.io, or a 10-digit
+  07X number) can't receive an SMS code, so they can no longer view, change or
+  cancel those bookings online. The owner can still release them in the property editor.
+- **The daily total of 1,000 codes is shared.** Someone sending requests from many
+  IP addresses could use it up and block codes for everyone until the next day.
+  The cap protects the SMS bill; raise it in `public.issue_otp()` if real traffic needs more.
 - **Password-reset and sign-up confirmation links work only in the browser that
   asked for them** until the email templates are changed (step 5 above), which
   needs a paid Supabase plan. Opened elsewhere, the reset page says the link is

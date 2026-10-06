@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createClient, FunctionsFetchError, FunctionsHttpError, type SupabaseClient } from '@supabase/supabase-js'
 import { SUPABASE } from '../config'
 import type { Database } from './database.types'
 
@@ -64,6 +64,23 @@ export async function run<R extends { data: unknown; error: unknown }>(
   }
   if (res.error) throw toBookingError(res.error)
   return res.data as SuccessData<R>
+}
+
+/**
+ * Calls an edge function (see supabase/functions) and returns its JSON, or
+ * throws a BookingError. The functions report errors as { error: 'snake_code' }.
+ */
+export async function callFunction<T>(name: string, body: Record<string, unknown>): Promise<T> {
+  if (!supabase) throw new BookingError('notConfigured')
+  const { data, error } = await supabase.functions.invoke(name, { body })
+  if (!error) return data as T
+  if (error instanceof FunctionsHttpError) {
+    const res = error.context as Response
+    const payload = (await res.json().catch(() => null)) as { error?: string } | null
+    throw toBookingError({ message: payload?.error ?? '', status: res.status })
+  }
+  if (error instanceof FunctionsFetchError) throw new BookingError('network')
+  throw toBookingError(error)
 }
 
 // Supabase responses are a union of { data, error: null } and { data: null, error }.
