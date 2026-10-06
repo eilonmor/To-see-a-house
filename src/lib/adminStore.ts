@@ -1,6 +1,7 @@
 // Admin-side data layer. Runs as the logged-in Supabase user; row-level
 // security limits every query to the properties that user manages.
 
+import type { Profile } from './auth'
 import { daySlots, hhmm, israelToday } from './bookingStore'
 import { BookingError, run } from './supabase'
 
@@ -63,14 +64,31 @@ export async function fetchProperty(propertyId: string): Promise<Property> {
   return row
 }
 
-export async function createProperty(userId: string, { title, address }: PropertyDetails): Promise<Property> {
+/** Who a new property belongs to. Agency members choose; everyone else owns theirs. */
+export type PropertyOwner = 'me' | 'agency'
+
+/**
+ * Creates a property owned by the user, or by their agency. An agent who
+ * creates an agency property is assigned to it (the database does both).
+ */
+export async function createProperty(profile: Profile, { title, address }: PropertyDetails, owner: PropertyOwner): Promise<Property> {
+  if (owner === 'agency') {
+    const id = await run((db) => db.rpc('create_agency_property', { p_title: title.trim(), p_address: address.trim() }))
+    return fetchProperty(id)
+  }
   return run((db) =>
     db
       .from('properties')
-      .insert({ owner_user_id: userId, title: title.trim(), address: address.trim() })
+      .insert({ owner_user_id: profile.id, title: title.trim(), address: address.trim() })
       .select(PROPERTY_COLUMNS)
       .single(),
   )
+}
+
+/** Hands a property the user owns to their agency. One-way; an agent stays assigned to it. */
+export async function transferToAgency(propertyId: string): Promise<Property> {
+  await run((db) => db.rpc('transfer_property_to_agency', { p_property_id: propertyId }))
+  return fetchProperty(propertyId)
 }
 
 export async function updateProperty(propertyId: string, { title, address }: PropertyDetails): Promise<Property> {

@@ -90,9 +90,18 @@ export async function applyPendingAccountType(profile: Profile): Promise<boolean
   if (!pending) return false
   const upgrade = pending === 'agent' && profile.role === 'personal' && !profile.orgId
   // Throws on failure, keeping the choice so that loading the account again retries.
-  if (upgrade) await run((db) => db.rpc('become_agent'))
+  if (upgrade) await upgradeToAgent()
   forgetPendingAccountType()
   return upgrade
+}
+
+/**
+ * Free owner -> agent: unlimited properties and dates. Only from 'personal'
+ * (agency members already are agents or admins). From phase 5 this needs a
+ * subscription.
+ */
+export async function upgradeToAgent(): Promise<void> {
+  await run((db) => db.rpc('become_agent'))
 }
 
 export async function signOut(): Promise<void> {

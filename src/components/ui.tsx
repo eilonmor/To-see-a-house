@@ -1,6 +1,6 @@
 // Small shared UI primitives.
 
-import { useEffect, type AnchorHTMLAttributes, type ButtonHTMLAttributes, type InputHTMLAttributes, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useState, type AnchorHTMLAttributes, type ButtonHTMLAttributes, type InputHTMLAttributes, type MouseEvent, type ReactNode } from 'react'
 import { navigate } from '../hooks/useRoute'
 
 export function Card({ className = '', children }: { className?: string; children: ReactNode }) {
@@ -27,7 +27,33 @@ export function Button({ variant = 'primary', className = '', ...props }: Button
   )
 }
 
-type FieldProps = InputHTMLAttributes<HTMLInputElement> & { label: string; id: string; error?: string }
+/** Copies `text` to the clipboard and says so for 2 seconds. */
+export function CopyButton({ text, label, copiedLabel }: { text: string; label: string; copiedLabel: string }) {
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return
+    const id = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(id)
+  }, [copied])
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+    } catch {
+      // clipboard unavailable — the text is still selectable
+    }
+  }
+
+  return (
+    <Button variant="secondary" className="px-3! py-1.5! text-xs" onClick={copy}>
+      {copied ? `✓ ${copiedLabel}` : label}
+    </Button>
+  )
+}
+
+type FieldProps =InputHTMLAttributes<HTMLInputElement> & { label: string; id: string; error?: string }
 
 export function Field({ label, id, error, dir, ...inputProps }: FieldProps) {
   return (
