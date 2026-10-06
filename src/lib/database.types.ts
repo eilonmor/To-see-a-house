@@ -233,7 +233,20 @@ export type Database = {
       }
       create_agency: { Args: { p_name: string }; Returns: string }
       create_agency_invite: { Args: Record<PropertyKey, never>; Returns: string }
+      preview_agency_invite: { Args: { p_code: string }; Returns: string }
       accept_agency_invite: { Args: { p_code: string }; Returns: string }
+      agency_members: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          id: string
+          role: Database['public']['Enums']['user_role']
+          full_name: string
+          phone: string
+          email: string
+        }[]
+      }
+      create_agency_property: { Args: { p_title: string; p_address: string }; Returns: string }
+      transfer_property_to_agency: { Args: { p_property_id: string }; Returns: undefined }
       leave_agency: { Args: Record<PropertyKey, never>; Returns: undefined }
       remove_agent: { Args: { p_agent_id: string }; Returns: undefined }
       become_agent: { Args: Record<PropertyKey, never>; Returns: undefined }

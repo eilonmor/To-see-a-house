@@ -2,9 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import type { User } from '@supabase/supabase-js'
 import { applyPendingAccountType, fetchProfile, signOut, type Profile } from '../lib/auth'
 import { useSession } from '../hooks/useSession'
-import { navigate } from '../hooks/useRoute'
+import { navigate, useRoute } from '../hooks/useRoute'
 import { errorText, useI18n } from '../i18n/I18nProvider'
-import { Alert, Button, Loading } from './ui'
+import { Alert, Button, Link, Loading } from './ui'
 import LoginForm from './LoginForm'
 
 type Account = { user: User; profile: Profile; reloadProfile: () => Promise<void> }
@@ -78,6 +78,11 @@ export default function AccountGate({ children }: { children: ReactNode }) {
 
 function AccountBar({ user, profile }: { user: User; profile: Profile }) {
   const { t } = useI18n()
+  const route = useRoute()
+  const links = [
+    { href: '/dashboard', label: t.nav.myProperties },
+    { href: '/dashboard/agency', label: t.agency.nav },
+  ]
 
   async function logout() {
     // Supabase clears the local session even when the request fails.
@@ -93,9 +98,26 @@ function AccountBar({ user, profile }: { user: User; profile: Profile }) {
           {t.account.plan[profile.role]}
         </span>
       </div>
-      <Button variant="secondary" className="px-3! py-1.5! text-xs" onClick={logout}>
-        {t.account.logout}
-      </Button>
+      <div className="flex items-center gap-1">
+        {links.map((link) => {
+          const active = route.replace(/\/+$/, '') === link.href
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              aria-current={active ? 'page' : undefined}
+              className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${
+                active ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              {link.label}
+            </Link>
+          )
+        })}
+        <Button variant="secondary" className="ms-1 px-3! py-1.5! text-xs" onClick={logout}>
+          {t.account.logout}
+        </Button>
+      </div>
     </div>
   )
 }

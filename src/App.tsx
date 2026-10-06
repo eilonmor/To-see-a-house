@@ -14,6 +14,8 @@ import AccountGate from './components/AccountGate'
 import PropertyList from './components/PropertyList'
 import NewProperty from './components/NewProperty'
 import PropertyEditor from './components/PropertyEditor'
+import AgencyPage from './components/AgencyPage'
+import JoinRoute from './components/JoinPage'
 import { Card, Link, Loading, Redirect } from './components/ui'
 
 // A malformed link (e.g. "/p/%") can't be decoded; the raw text then simply
@@ -35,6 +37,7 @@ export default function App() {
   const linkSlug = path.match(/^\/p\/([^/]+)$/)?.[1]
   const slug = linkSlug ?? (path === '/' ? DEFAULT_PROPERTY_SLUG : '')
   const editorId = path.match(/^\/dashboard\/p\/([^/]+)$/)?.[1]
+  const inviteCode = path.match(/^\/join\/([^/]+)$/)?.[1]
 
   // On a property's page, the logo leads back to the last property opened by
   // its own link, e.g. after a visit to another page.
@@ -55,6 +58,8 @@ export default function App() {
   else if (path === '/admin') page = <Redirect to="/dashboard" />
   else if (path === '/dashboard') page = <AccountGate><PropertyList /></AccountGate>
   else if (path === '/dashboard/new') page = <AccountGate><NewProperty /></AccountGate>
+  else if (path === '/dashboard/agency') page = <AccountGate><AgencyPage /></AccountGate>
+  else if (inviteCode) page = <JoinRoute key={inviteCode} code={decodeSegment(inviteCode)} />
   else if (editorId) page = <AccountGate><PropertyEditor key={editorId} propertyId={decodeSegment(editorId)} /></AccountGate>
   else page = <NotFound />
 

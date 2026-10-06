@@ -9,6 +9,18 @@ See [PLAN.md](PLAN.md) for where the project is going.
   Google as an *owner* (free plan: one apartment, two viewing dates) or an *agent* (unlimited).
 - **My properties** (`/dashboard`): every apartment you manage, with its upcoming
   dates and bookings. Open one (`/dashboard/p/<id>`) to edit it.
+- **Agencies** (`/dashboard/agency`): any user can set up an agency and becomes its
+  admin. The admin invites agents with one-time links (`/join/<code>`, valid 7 days,
+  or the code typed in on the agency page), removes agents, and assigns agents to
+  each agency apartment in the property editor. An invite link opened before
+  logging in is remembered through sign-up.
+- **Who owns an apartment.** Agency members (admin and agents) choose when they
+  add one: the agency (default) or themselves. It can't change later, except that
+  an apartment you own can be passed to the agency (one-way; an agent who passes
+  one stays assigned to it). Apartments you had before joining stay yours.
+  Leaving or being removed takes away the agency's apartments and keeps your own.
+- **Upgrading.** A free owner can upgrade to an agent account from *My properties*,
+  without joining an agency.
 - **Visitor page** (`/p/<slug>`, or `/` for the property in `VITE_PROPERTY_SLUG`):
   the visitor enters their full name and phone number, then picks a viewing day
   and a free time slot. Booked slots are greyed out and can't be picked.
@@ -39,7 +51,8 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
 1. Create a project at <https://supabase.com> (region: Frankfurt).
 2. **Apply the database schema.** Either paste each file in
    [`supabase/migrations/`](supabase/migrations/) into **SQL Editor** and run them
-   in order (`…_init.sql`, `…_accounts.sql`, `…_phone_10_digits.sql`, `…_guest_otp.sql`), or with the Supabase CLI.
+   in order (`…_init.sql`, `…_accounts.sql`, `…_phone_10_digits.sql`, `…_guest_otp.sql`,
+   `…_agencies.sql`), or with the Supabase CLI.
    Hold back `…_revoke_guest_anon.sql` until the edge functions (step 8) and the new
    frontend are live: it cuts off the browser's direct access to the booking functions.
    `db push` applies every pending file, including that one, so on an existing
@@ -191,7 +204,8 @@ src/
 │   ├── database.types.ts      # types for the database schema
 │   ├── bookingStore.ts        # visitor API (SMS code, edge functions), slot/date/phone helpers
 │   ├── auth.ts                # sign-up, login, password reset, profile
-│   └── adminStore.ts          # owner API: properties, days, bookings
+│   ├── adminStore.ts          # owner API: properties, days, bookings
+│   └── agencyStore.ts         # agencies, invites, members, agent assignments
 ├── hooks/
 │   ├── usePolledData.ts       # loads data and keeps it fresh (polling)
 │   ├── useSession.ts          # Supabase auth session
@@ -212,7 +226,9 @@ src/
     ├── AccountGate.tsx        # login gate, profile, account bar; useAccount()
     ├── PropertyList.tsx       # my properties
     ├── NewProperty.tsx        # create a property
-    ├── PropertyEditor.tsx     # share link, bookings per day, details, delete
+    ├── PropertyEditor.tsx     # share link, bookings per day, details, agents, delete
+    ├── AgencyPage.tsx         # set up / join an agency; members, invites, leave
+    ├── JoinPage.tsx           # /join/<code>: accept an agency invite
     ├── DayForm.tsx            # add or edit a viewing day
     └── InstructionsEditor.tsx # post-booking instructions
 supabase/migrations/           # database schema, rules and row-level security
@@ -255,4 +271,8 @@ npx supabase gen types typescript --project-id <project-ref> > src/lib/database.
 - **Editing a viewing day can't strand a booking.** The database refuses new hours
   that would drop a booked slot; release it first.
 - **Agent plans aren't charged yet.** Until phase 5, anyone can sign up as an agent
-  and get unlimited apartments.
+  and get unlimited apartments. The same goes for owners who upgrade, for agencies,
+  and for owners who join an agency: joining makes the account an agent's, and it
+  stays one after leaving.
+- **Agencies have one admin, who can't leave.** There's no way yet to hand the
+  agency to another member or to delete it.

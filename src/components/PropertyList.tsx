@@ -1,10 +1,12 @@
+import { useState } from 'react'
 import { fetchProperties, type PropertySummary } from '../lib/adminStore'
-import { nextPropertyAllowedAt } from '../lib/auth'
+import { pendingInvite } from '../lib/agencyStore'
+import { nextPropertyAllowedAt, upgradeToAgent } from '../lib/auth'
 import { formatDate, israelDate } from '../lib/bookingStore'
 import { usePolledData } from '../hooks/usePolledData'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { useAccount } from './AccountGate'
-import { Alert, Card, Link, Loading } from './ui'
+import { Alert, Button, Card, Link, Loading, Redirect, Spinner } from './ui'
 
 /** The dashboard home: every property the user manages. */
 export default function PropertyList() {
@@ -23,6 +25,10 @@ export default function PropertyList() {
     }
   }
 
+  // An agency invite opened before signing up (sign-up and Google land here).
+  const invite = pendingInvite()
+  if (invite) return <Redirect to={`/join/${encodeURIComponent(invite)}`} />
+
   return (
     <div className="space-y-6 pt-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -37,7 +43,7 @@ export default function PropertyList() {
         )}
       </div>
 
-      {profile.role === 'personal' && <p className="text-sm text-slate-500">{t.properties.freePlan}</p>}
+      {profile.role === 'personal' && <FreePlanNote />}
 
       {error != null && (
         <Alert>
@@ -64,6 +70,43 @@ export default function PropertyList() {
   )
 }
 
+/** The free plan's limits, and the way out of them. */
+function FreePlanNote() {
+  const { t } = useI18n()
+  const { reloadProfile } = useAccount()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function upgrade() {
+    if (!window.confirm(t.properties.confirmUpgrade)) return
+    setBusy(true)
+    setError('')
+    try {
+      await upgradeToAgent()
+      // The profile is now an agent's: this note goes away.
+      await reloadProfile()
+    } catch (err) {
+      setError(`${t.properties.upgradeError} ${errorText(err, t)}`)
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 text-sm">
+          <p className="text-slate-600">{t.properties.freePlan}</p>
+          <p className="mt-0.5 text-slate-500">{t.properties.upgradeHelp}</p>
+        </div>
+        <Button variant="secondary" className="px-3! py-1.5! text-xs" onClick={upgrade} disabled={busy}>
+          {busy && <Spinner className="h-3 w-3" />} {t.properties.upgrade}
+        </Button>
+      </div>
+      {error && <Alert>{error}</Alert>}
+    </div>
+  )
+}
+
 function PropertyCard({ property }: { property: PropertySummary }) {
   const { t, lang } = useI18n()
   return (
@@ -72,7 +115,14 @@ function PropertyCard({ property }: { property: PropertySummary }) {
       className="block h-full rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
     >
       <Card className="h-full p-5! transition hover:border-indigo-300 hover:shadow-md sm:p-6!">
-        <h2 className="font-semibold text-slate-900">{property.title}</h2>
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="font-semibold text-slate-900">{property.title}</h2>
+          {property.owner_org_id && (
+            <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+              {t.properties.agencyBadge}
+            </span>
+          )}
+        </div>
         {property.address && <p className="mt-0.5 text-sm text-slate-500">{property.address}</p>}
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
           {property.upcomingDates.length === 0 ? (

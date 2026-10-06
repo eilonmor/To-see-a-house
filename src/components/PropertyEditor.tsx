@@ -6,6 +6,7 @@ import {
   fetchDays,
   fetchProperty,
   releaseBooking,
+  transferToAgency,
   updateDay,
   updateProperty,
   type AdminBooking,
@@ -13,12 +14,13 @@ import {
   type NewDay,
   type Property,
 } from '../lib/adminStore'
+import { fetchAssignedAgents, fetchMembers, memberName, setAgentAssigned, type Member } from '../lib/agencyStore'
 import { BookingError, formatDate, israelToday } from '../lib/bookingStore'
 import { usePolledData } from '../hooks/usePolledData'
 import { navigate } from '../hooks/useRoute'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { useAccount } from './AccountGate'
-import { Alert, Button, Card, Field, Link, Loading, Spinner } from './ui'
+import { Alert, Button, Card, CopyButton, Field, Link, Loading, Spinner } from './ui'
 import InstructionsEditor from './InstructionsEditor'
 import DayForm from './DayForm'
 
@@ -82,6 +84,8 @@ export default function PropertyEditor({ propertyId }: { propertyId: string }) {
     property.owner_user_id === profile.id ||
     (property.owner_org_id !== null && profile.role === 'agency_admin' && profile.orgId === property.owner_org_id)
   const freePlan = property.owner_user_id === profile.id && profile.role === 'personal'
+  // Agency members can hand a property they own to the agency (one-way).
+  const canTransfer = property.owner_user_id === profile.id && profile.orgId !== null
 
   // Free plan: two dates in total. The database enforces it; this explains it up front.
   let addDayNotice = ''
@@ -106,6 +110,19 @@ export default function PropertyEditor({ propertyId }: { propertyId: string }) {
     await updateDay(day.id, next)
     setEditingDayId(null)
     await refresh()
+  }
+
+  async function handleTransfer() {
+    if (!property || !window.confirm(t.editor.confirmTransfer(property.title))) return
+    setBusy('transfer')
+    setActionError('')
+    try {
+      setProperty(await transferToAgency(property.id))
+    } catch (err) {
+      setActionError(`${t.editor.transferError} ${errorText(err, t)}`)
+    } finally {
+      setBusy(null)
+    }
   }
 
   async function handleDeleteProperty() {
@@ -205,6 +222,22 @@ export default function PropertyEditor({ propertyId }: { propertyId: string }) {
         onSaved={(instructions) => setProperty({ ...property, instructions })}
       />
 
+      {isOwner && property.owner_org_id !== null && <AgentsEditor propertyId={property.id} />}
+
+      {canTransfer && (
+        <Card>
+          <h2 className="text-lg font-semibold text-slate-900">{t.editor.transferTitle}</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            {profile.role === 'agency_admin' ? t.editor.transferHelpAdmin : t.editor.transferHelpAgent} {t.editor.transferFinal}
+          </p>
+          <div className="mt-4 flex justify-end">
+            <Button variant="secondary" onClick={handleTransfer} disabled={busy !== null}>
+              {busy === 'transfer' && <Spinner />} {t.editor.transfer}
+            </Button>
+          </div>
+        </Card>
+      )}
+
       {isOwner && (
         <Card className="border-rose-200!">
           <h2 className="text-lg font-semibold text-slate-900">{t.editor.deleteTitle}</h2>
@@ -232,18 +265,7 @@ function BackLink() {
 
 function ShareLink({ slug }: { slug: string }) {
   const { t } = useI18n()
-  const [copied, setCopied] = useState(false)
   const url = `${window.location.origin}/p/${slug}`
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      // clipboard unavailable — the link is still selectable
-    }
-  }
 
   return (
     <Card className="p-5! sm:p-6!">
@@ -252,9 +274,7 @@ function ShareLink({ slug }: { slug: string }) {
         <a href={url} target="_blank" rel="noopener" dir="ltr" className="min-w-0 flex-1 break-all text-sm text-indigo-600 hover:underline">
           {url}
         </a>
-        <Button variant="secondary" className="px-3! py-1.5! text-xs" onClick={copy}>
-          {copied ? `✓ ${t.dashboard.copied}` : t.dashboard.copy}
-        </Button>
+        <CopyButton text={url} label={t.dashboard.copy} copiedLabel={t.dashboard.copied} />
       </div>
     </Card>
   )
@@ -329,6 +349,89 @@ function DetailsEditor({ property, onSaved }: { property: Property; onSaved: (pr
           </Button>
         </div>
       </form>
+    </Card>
+  )
+}
+
+/** Agency properties: which of the agency's agents manage this one. Admin only. */
+function AgentsEditor({ propertyId }: { propertyId: string }) {
+  const { t } = useI18n()
+  const [agents, setAgents] = useState<Member[] | null>(null) // null while loading
+  const [assigned, setAssigned] = useState<Set<string>>(new Set())
+  const [busy, setBusy] = useState<string | null>(null) // id of the agent being changed
+  const [error, setError] = useState<unknown>(null)
+
+  useEffect(() => {
+    Promise.all([fetchMembers(), fetchAssignedAgents(propertyId)]).then(([members, ids]) => {
+      setAgents(members.filter((m) => m.role === 'agent'))
+      setAssigned(new Set(ids))
+    }, setError)
+  }, [propertyId])
+
+  async function toggle(agentId: string, on: boolean) {
+    setBusy(agentId)
+    setError(null)
+    try {
+      await setAgentAssigned(propertyId, agentId, on)
+      setAssigned((prev) => {
+        const next = new Set(prev)
+        if (on) next.add(agentId)
+        else next.delete(agentId)
+        return next
+      })
+    } catch (err) {
+      setError(err)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <Card>
+      <h2 className="text-lg font-semibold text-slate-900">{t.editor.agentsTitle}</h2>
+      <p className="mt-1 text-sm text-slate-500">{t.editor.agentsHelp}</p>
+      <div className="mt-4 space-y-3">
+        {error != null && (
+          <Alert>
+            {t.editor.agentsError} {errorText(error, t)}
+          </Alert>
+        )}
+        {agents === null ? (
+          error == null && <Loading label={t.dashboard.loading} />
+        ) : agents.length === 0 ? (
+          <Alert tone="info">
+            {t.editor.noAgents}{' '}
+            <Link href="/dashboard/agency" className="font-medium underline">
+              {t.agency.nav}
+            </Link>
+          </Alert>
+        ) : (
+          <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+            {agents.map((agent) => (
+              <li key={agent.id}>
+                <label className="flex cursor-pointer items-center gap-3 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-indigo-600"
+                    checked={assigned.has(agent.id)}
+                    disabled={busy !== null}
+                    onChange={(e) => toggle(agent.id, e.target.checked)}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-slate-800">{memberName(agent)}</span>
+                    {agent.fullName && (
+                      <span className="block truncate text-xs text-slate-500" dir="ltr">
+                        {agent.email}
+                      </span>
+                    )}
+                  </span>
+                  {busy === agent.id && <Spinner className="h-3 w-3" />}
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </Card>
   )
 }
