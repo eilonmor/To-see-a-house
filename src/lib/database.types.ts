@@ -145,6 +145,7 @@ export type Database = {
           slot: string
           guest_phone_key: string
           guest_name: string
+          host_note: string
           created_at: string
           updated_at: string | null
         }
@@ -154,6 +155,7 @@ export type Database = {
           slot: string
           guest_phone_key: string
           guest_name: string
+          host_note?: string
           created_at?: string
           updated_at?: string | null
         }

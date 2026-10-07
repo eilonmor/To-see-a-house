@@ -21,7 +21,8 @@ export type PropertySummary = Property & { upcomingDates: string[]; upcomingBook
 
 export type PropertyDetails = { title: string; address: string }
 
-export type AdminBooking = { id: string; name: string; phone: string }
+/** `note` is the host's private note on the visitor; the visitor never sees it. */
+export type AdminBooking = { id: string; name: string; phone: string; note: string }
 
 /** A viewing day with its bookings by slot. Times are 'HH:MM'. */
 export type AdminDay = {
@@ -122,7 +123,7 @@ export async function fetchDays(propertyId: string): Promise<AdminDay[]> {
   const rows = await run((db) =>
     db
       .from('visit_days')
-      .select('id, date, start_time, end_time, slot_minutes, bookings (id, slot, guest_name, guest_phone_key)')
+      .select('id, date, start_time, end_time, slot_minutes, bookings (id, slot, guest_name, guest_phone_key, host_note)')
       .eq('property_id', propertyId)
       .order('date'),
   )
@@ -134,7 +135,7 @@ export async function fetchDays(propertyId: string): Promise<AdminDay[]> {
     slotMinutes: d.slot_minutes,
     slots: daySlots(d),
     bookings: Object.fromEntries(
-      d.bookings.map((b) => [hhmm(b.slot), { id: b.id, name: b.guest_name, phone: b.guest_phone_key }]),
+      d.bookings.map((b) => [hhmm(b.slot), { id: b.id, name: b.guest_name, phone: b.guest_phone_key, note: b.host_note }]),
     ),
   }))
 }
@@ -158,6 +159,18 @@ export async function updateDay(dayId: string, day: NewDay): Promise<void> {
 /** Deletes a visit day and all of its bookings. */
 export async function deleteDay(dayId: string): Promise<void> {
   await run((db) => db.from('visit_days').delete().eq('id', dayId))
+}
+
+/**
+ * Saves the host's note on a booking. Returns the saved text. Throws
+ * 'bookingGone' if the visitor cancelled in the meantime.
+ */
+export async function saveBookingNote(bookingId: string, note: string): Promise<string> {
+  const row = await run((db) =>
+    db.from('bookings').update({ host_note: note.trim() }).eq('id', bookingId).select('host_note').maybeSingle(),
+  )
+  if (!row) throw new BookingError('bookingGone')
+  return row.host_note
 }
 
 /** Removes a booking, making its slot available again. */

@@ -63,7 +63,7 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
 2. **Apply the database schema.** Either paste each file in
    [`supabase/migrations/`](supabase/migrations/) into **SQL Editor** and run them
    in order (`…_init.sql`, `…_accounts.sql`, `…_phone_10_digits.sql`, `…_guest_otp.sql`,
-   `…_agencies.sql`, `…_calendar_feed.sql`), or with the Supabase CLI.
+   `…_agencies.sql`, `…_calendar_feed.sql`, `…_booking_notes.sql`), or with the Supabase CLI.
    Hold back `…_revoke_guest_anon.sql` until the edge functions (step 8) and the new
    frontend are live: it cuts off the browser's direct access to the booking functions.
    `db push` applies every pending file, including that one, so on an existing

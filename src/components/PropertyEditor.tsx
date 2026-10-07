@@ -6,6 +6,7 @@ import {
   fetchDays,
   fetchProperty,
   releaseBooking,
+  saveBookingNote,
   transferToAgency,
   updateDay,
   updateProperty,
@@ -192,6 +193,7 @@ export default function PropertyEditor({ propertyId }: { propertyId: string }) {
             onSave={(next) => handleEditDay(day, next)}
             onRelease={handleRelease}
             onDelete={handleDeleteDay}
+            onNoteSaved={refresh}
           />
         ))
       )}
@@ -448,9 +450,10 @@ type DayTableProps = {
   onSave: (next: NewDay) => Promise<void>
   onRelease: (day: AdminDay, slot: string, booking: AdminBooking) => void
   onDelete: (day: AdminDay) => void
+  onNoteSaved: () => Promise<void>
 }
 
-function DayTable({ day, archived, busy, editing, onEdit, onCancelEdit, onSave, onRelease, onDelete }: DayTableProps) {
+function DayTable({ day, archived, busy, editing, onEdit, onCancelEdit, onSave, onRelease, onDelete, onNoteSaved }: DayTableProps) {
   const { t, lang } = useI18n()
   const booked = day.slots.filter((s) => day.bookings[s]).length
 
@@ -504,6 +507,9 @@ function DayTable({ day, archived, busy, editing, onEdit, onCancelEdit, onSave, 
               <th scope="col" className="px-4 py-3">
                 {t.dashboard.colPhone}
               </th>
+              <th scope="col" className="px-4 py-3">
+                {t.dashboard.colNotes}
+              </th>
               <th scope="col" className="px-4 py-3 text-end sm:px-6">
                 <span className="sr-only">{t.dashboard.colActions}</span>
               </th>
@@ -512,35 +518,23 @@ function DayTable({ day, archived, busy, editing, onEdit, onCancelEdit, onSave, 
           <tbody className="divide-y divide-slate-100">
             {day.slots.map((slot) => {
               const booking = day.bookings[slot]
-              return (
-                <tr key={slot} className={booking ? 'bg-white' : 'bg-slate-50/50'}>
+              return booking ? (
+                <BookingRow
+                  key={booking.id}
+                  slot={slot}
+                  booking={booking}
+                  busy={busy}
+                  onRelease={() => onRelease(day, slot, booking)}
+                  onNoteSaved={onNoteSaved}
+                />
+              ) : (
+                <tr key={slot} className="bg-slate-50/50">
                   <td className="whitespace-nowrap px-4 py-4 font-semibold text-slate-900 sm:px-6">{slot}</td>
-                  {booking ? (
-                    <>
-                      <td className="px-4 py-4 text-slate-800">{booking.name}</td>
-                      <td className="whitespace-nowrap px-4 py-4">
-                        <a href={`tel:${booking.phone}`} className="text-indigo-600 hover:underline" dir="ltr">
-                          {booking.phone}
-                        </a>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-4 text-end sm:px-6">
-                        <Button
-                          variant="danger"
-                          className="px-3! py-1.5! text-xs"
-                          onClick={() => onRelease(day, slot, booking)}
-                          disabled={busy !== null}
-                        >
-                          {busy === booking.id ? <Spinner className="h-3 w-3" /> : null} {t.dashboard.release}
-                        </Button>
-                      </td>
-                    </>
-                  ) : (
-                    <td colSpan={3} className="px-4 py-4 sm:pe-6">
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {t.dashboard.availableBadge}
-                      </span>
-                    </td>
-                  )}
+                  <td colSpan={4} className="px-4 py-4 sm:pe-6">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {t.dashboard.availableBadge}
+                    </span>
+                  </td>
                 </tr>
               )
             })}
@@ -548,6 +542,162 @@ function DayTable({ day, archived, busy, editing, onEdit, onCancelEdit, onSave, 
         </table>
       </div>
     </Card>
+  )
+}
+
+type BookingRowProps = {
+  slot: string
+  booking: AdminBooking
+  busy: string | null
+  onRelease: () => void
+  onNoteSaved: () => Promise<void>
+}
+
+/** A booked slot. Clicking the row opens the host's notes on the visitor below it. */
+function BookingRow({ slot, booking, busy, onRelease, onNoteSaved }: BookingRowProps) {
+  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+  const notesId = `notes-${booking.id}`
+
+  return (
+    <>
+      <tr onClick={() => setOpen((o) => !o)} className={`cursor-pointer ${open ? 'bg-slate-50' : 'bg-white hover:bg-slate-50'}`}>
+        <td className="whitespace-nowrap px-4 py-4 font-semibold text-slate-900 sm:px-6">
+          <svg
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+            className={`me-1.5 inline h-4 w-4 align-[-3px] text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
+          >
+            <path d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.17l3.71-3.94a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" />
+          </svg>
+          {slot}
+        </td>
+        <td className="px-4 py-4 text-slate-800">{booking.name}</td>
+        <td className="whitespace-nowrap px-4 py-4">
+          <a href={`tel:${booking.phone}`} onClick={(e) => e.stopPropagation()} className="text-indigo-600 hover:underline" dir="ltr">
+            {booking.phone}
+          </a>
+        </td>
+        <td className="px-4 py-4">
+          {/* The click bubbles up to the row, which toggles; the button is here for keyboard users. */}
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={notesId}
+            dir="auto"
+            className="block max-w-48 truncate text-start sm:max-w-64"
+          >
+            {booking.note ? (
+              <span className="text-slate-600">{booking.note}</span>
+            ) : (
+              <span className="text-indigo-600 hover:underline">{t.dashboard.addNote}</span>
+            )}
+          </button>
+        </td>
+        <td className="whitespace-nowrap px-4 py-4 text-end sm:px-6">
+          <Button
+            variant="danger"
+            className="px-3! py-1.5! text-xs"
+            onClick={(e) => {
+              e.stopPropagation()
+              onRelease()
+            }}
+            disabled={busy !== null}
+          >
+            {busy === booking.id ? <Spinner className="h-3 w-3" /> : null} {t.dashboard.release}
+          </Button>
+        </td>
+      </tr>
+      {/* Hidden rather than removed when closed, so an unsaved draft survives. */}
+      <tr id={notesId} hidden={!open} className="bg-slate-50">
+        <td colSpan={5} className="px-4 pb-4 sm:px-6">
+          <NoteEditor booking={booking} onSaved={onNoteSaved} />
+        </td>
+      </tr>
+    </>
+  )
+}
+
+const NOTE_MAX_LENGTH = 2000
+
+/** The host's private note on a visitor. */
+function NoteEditor({ booking, onSaved }: { booking: AdminBooking; onSaved: () => Promise<void> }) {
+  const { t } = useI18n()
+  const [draft, setDraft] = useState(booking.note)
+  // As in InstructionsEditor: background refreshes update an untouched draft,
+  // and never overwrite one the host is editing.
+  const [base, setBase] = useState(booking.note)
+  const [saving, setSaving] = useState(false)
+  const [status, setStatus] = useState<'saved' | { error: unknown } | null>(null)
+  const inputId = `note-${booking.id}`
+
+  useEffect(() => {
+    if (booking.note === base) return
+    if (draft === base) setDraft(booking.note)
+    setBase(booking.note)
+  }, [booking.note, base, draft])
+
+  useEffect(() => {
+    if (status !== 'saved') return
+    const id = setTimeout(() => setStatus(null), 3000)
+    return () => clearTimeout(id)
+  }, [status])
+
+  const dirty = draft.trim() !== booking.note
+
+  async function handleSave() {
+    setSaving(true)
+    setStatus(null)
+    try {
+      const saved = await saveBookingNote(booking.id, draft)
+      // Reload first, so the row's preview (and booking.note) show the saved text.
+      await onSaved()
+      setDraft(saved)
+      setBase(saved)
+      setStatus('saved')
+    } catch (err) {
+      setStatus({ error: err })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <label htmlFor={inputId} className="block text-sm font-medium text-slate-700">
+        {t.dashboard.noteLabel(booking.name)}
+      </label>
+      <textarea
+        id={inputId}
+        dir="auto"
+        rows={3}
+        maxLength={NOTE_MAX_LENGTH}
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value)
+          setStatus(null)
+        }}
+        disabled={saving}
+        placeholder={t.dashboard.notePlaceholder}
+        className="block w-full resize-y rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50"
+      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-xs text-slate-400">{t.dashboard.notePrivate}</span>
+        <div className="flex items-center gap-3">
+          {status === 'saved' && <span className="text-sm font-medium text-emerald-600">✓ {t.dashboard.noteSaved}</span>}
+          {dirty && status !== 'saved' && <span className="text-sm text-amber-600">{t.dashboard.noteUnsaved}</span>}
+          <Button className="px-3! py-1.5! text-xs" onClick={handleSave} disabled={!dirty || saving}>
+            {saving && <Spinner className="h-3 w-3" />} {saving ? t.dashboard.noteSaving : t.dashboard.noteSave}
+          </Button>
+        </div>
+      </div>
+      {status && status !== 'saved' && (
+        <Alert>
+          {t.dashboard.noteSaveError} {errorText(status.error, t)}
+        </Alert>
+      )}
+    </div>
   )
 }
 
