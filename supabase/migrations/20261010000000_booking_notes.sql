@@ -15,9 +15,24 @@ create policy "managers write notes" on public.bookings
 revoke update on public.bookings from authenticated;
 grant update (host_note) on public.bookings to authenticated;
 
+-- A note edit counts as a change to the booking.
+create or replace function public.touch_booking_note() returns trigger
+language plpgsql set search_path = ''
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end
+$$;
+drop trigger if exists bookings_touch_note on public.bookings;
+create trigger bookings_touch_note
+  before update of host_note on public.bookings
+  for each row when (new.host_note is distinct from old.host_note)
+  execute function public.touch_booking_note();
+
 -- As before, but the note moves with the booking to the new day (a move
--- within the same day keeps the row, and so the note, already). It doesn't
--- overwrite a note the guest's booking on the new day already has.
+-- within the same day keeps the row, and so the note, already). If the guest's
+-- booking on the new day has a note of its own, the moved note is appended to it.
 create or replace function public.reschedule_guest_booking(
   p_from_day_id uuid, p_to_day_id uuid, p_slot time, p_name text, p_phone text
 ) returns jsonb
@@ -37,8 +52,12 @@ begin
   end if;
   result := public.book_guest_slot(p_to_day_id, p_slot, p_name, p_phone);
   if note <> '' then
-    update public.bookings set host_note = note
-    where visit_day_id = p_to_day_id and guest_phone_key = public.phone_key(p_phone) and host_note = '';
+    update public.bookings
+    set host_note = case
+      when host_note = '' then note
+      else left(host_note || E'\n\n' || note, 2000)
+    end
+    where visit_day_id = p_to_day_id and guest_phone_key = public.phone_key(p_phone) and host_note <> note;
   end if;
   return result;
 end

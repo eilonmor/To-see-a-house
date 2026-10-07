@@ -163,7 +163,8 @@ export async function deleteDay(dayId: string): Promise<void> {
 
 /**
  * Saves the host's note on a booking. Returns the saved text. Throws
- * 'bookingGone' if the visitor cancelled in the meantime.
+ * 'bookingGone' if no row was updated: row-level security hides a cancelled or
+ * released booking and one the user no longer manages alike, so we can't tell which.
  */
 export async function saveBookingNote(bookingId: string, note: string): Promise<string> {
   const row = await run((db) =>

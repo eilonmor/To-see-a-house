@@ -17,6 +17,7 @@ import {
 } from '../lib/adminStore'
 import { fetchAssignedAgents, fetchMembers, memberName, setAgentAssigned, type Member } from '../lib/agencyStore'
 import { BookingError, formatDate, israelToday } from '../lib/bookingStore'
+import { useDraftEditor } from '../hooks/useDraftEditor'
 import { usePolledData } from '../hooks/usePolledData'
 import { navigate } from '../hooks/useRoute'
 import { errorText, useI18n } from '../i18n/I18nProvider'
@@ -37,6 +38,7 @@ export default function PropertyEditor({ propertyId }: { propertyId: string }) {
   const [busy, setBusy] = useState<string | null>(null) // id of the booking / day / property being changed
   const [actionError, setActionError] = useState('')
   const [editingDayId, setEditingDayId] = useState<string | null>(null)
+  const [draftStore] = useState(() => new Map<string, NoteDraft>())
 
   useEffect(() => {
     fetchProperty(propertyId).then(setProperty, setPropertyError)
@@ -45,6 +47,7 @@ export default function PropertyEditor({ propertyId }: { propertyId: string }) {
   const load = useCallback(() => fetchDays(propertyId), [propertyId])
   const { data: days, loading, error, lastUpdated, refresh } = usePolledData<AdminDay[]>(property ? load : null, [])
 
+  const noteDrafts = noteDraftsFor(draftStore, days)
   const today = israelToday()
   const upcoming = days.filter((d) => d.date >= today)
   const archived = days.filter((d) => d.date < today)
@@ -194,6 +197,7 @@ export default function PropertyEditor({ propertyId }: { propertyId: string }) {
             onRelease={handleRelease}
             onDelete={handleDeleteDay}
             onNoteSaved={refresh}
+            noteDrafts={noteDrafts}
           />
         ))
       )}
@@ -451,9 +455,10 @@ type DayTableProps = {
   onRelease: (day: AdminDay, slot: string, booking: AdminBooking) => void
   onDelete: (day: AdminDay) => void
   onNoteSaved: () => Promise<void>
+  noteDrafts: NoteDrafts
 }
 
-function DayTable({ day, archived, busy, editing, onEdit, onCancelEdit, onSave, onRelease, onDelete, onNoteSaved }: DayTableProps) {
+function DayTable({ day, archived, busy, editing, onEdit, onCancelEdit, onSave, onRelease, onDelete, onNoteSaved, noteDrafts }: DayTableProps) {
   const { t, lang } = useI18n()
   const booked = day.slots.filter((s) => day.bookings[s]).length
 
@@ -526,6 +531,7 @@ function DayTable({ day, archived, busy, editing, onEdit, onCancelEdit, onSave, 
                   busy={busy}
                   onRelease={() => onRelease(day, slot, booking)}
                   onNoteSaved={onNoteSaved}
+                  noteDrafts={noteDrafts}
                 />
               ) : (
                 <tr key={slot} className="bg-slate-50/50">
@@ -551,17 +557,25 @@ type BookingRowProps = {
   busy: string | null
   onRelease: () => void
   onNoteSaved: () => Promise<void>
+  noteDrafts: NoteDrafts
 }
 
 /** A booked slot. Clicking the row opens the host's notes on the visitor below it. */
-function BookingRow({ slot, booking, busy, onRelease, onNoteSaved }: BookingRowProps) {
+function BookingRow({ slot, booking, busy, onRelease, onNoteSaved, noteDrafts }: BookingRowProps) {
   const { t } = useI18n()
-  const [open, setOpen] = useState(false)
+  // Open from the start if the host has an unsaved draft for this visitor.
+  const [open, setOpen] = useState(() => noteDrafts.get(booking) !== undefined)
   const notesId = `notes-${booking.id}`
 
   return (
     <>
-      <tr onClick={() => setOpen((o) => !o)} className={`cursor-pointer ${open ? 'bg-slate-50' : 'bg-white hover:bg-slate-50'}`}>
+      <tr
+        onClick={() => {
+          // Not when the click ends a text selection (e.g. copying the visitor's name).
+          if (window.getSelection()?.toString()) return
+          setOpen((o) => !o)
+        }}
+        className={`cursor-pointer ${open ? 'bg-slate-50' : 'bg-white hover:bg-slate-50'}`}>
         <td className="whitespace-nowrap px-4 py-4 font-semibold text-slate-900 sm:px-6">
           <svg
             viewBox="0 0 20 20"
@@ -612,7 +626,7 @@ function BookingRow({ slot, booking, busy, onRelease, onNoteSaved }: BookingRowP
       {/* Hidden rather than removed when closed, so an unsaved draft survives. */}
       <tr id={notesId} hidden={!open} className="bg-slate-50">
         <td colSpan={5} className="px-4 pb-4 sm:px-6">
-          <NoteEditor booking={booking} onSaved={onNoteSaved} />
+          <NoteEditor booking={booking} disabled={busy === booking.id} onSaved={onNoteSaved} drafts={noteDrafts} />
         </td>
       </tr>
     </>
@@ -621,47 +635,60 @@ function BookingRow({ slot, booking, busy, onRelease, onNoteSaved }: BookingRowP
 
 const NOTE_MAX_LENGTH = 2000
 
+type NoteDraft = { phone: string; text: string }
+
+type NoteDrafts = {
+  get: (booking: AdminBooking) => string | undefined
+  set: (booking: AdminBooking, text: string | null) => void
+}
+
+/**
+ * Unsaved note drafts by booking id. Rescheduling to another day recreates the
+ * visitor's booking there under a new id, so a draft whose booking is gone is
+ * picked up when that visitor's (by phone) new booking first renders.
+ */
+function noteDraftsFor(store: Map<string, NoteDraft>, days: AdminDay[]): NoteDrafts {
+  const live = new Set(days.flatMap((d) => Object.values(d.bookings).flatMap((b) => (b ? [b.id] : []))))
+  const orphans = (phone: string) => [...store].filter(([id, d]) => d.phone === phone && !live.has(id))
+  return {
+    get: (booking) => store.get(booking.id)?.text ?? orphans(booking.phone)[0]?.[1].text,
+    set: (booking, text) => {
+      if (text === null) {
+        store.delete(booking.id)
+        return
+      }
+      store.set(booking.id, { phone: booking.phone, text })
+      // Picked up: the editor started from the gone booking's draft.
+      for (const [id, d] of orphans(booking.phone)) if (d.text === text) store.delete(id)
+    },
+  }
+}
+
+type NoteEditorProps = {
+  booking: AdminBooking
+  disabled: boolean
+  onSaved: () => Promise<void>
+  drafts: NoteDrafts
+}
+
 /** The host's private note on a visitor. */
-function NoteEditor({ booking, onSaved }: { booking: AdminBooking; onSaved: () => Promise<void> }) {
+function NoteEditor({ booking, disabled, onSaved, drafts }: NoteEditorProps) {
   const { t } = useI18n()
-  const [draft, setDraft] = useState(booking.note)
-  // As in InstructionsEditor: background refreshes update an untouched draft,
-  // and never overwrite one the host is editing.
-  const [base, setBase] = useState(booking.note)
-  const [saving, setSaving] = useState(false)
-  const [status, setStatus] = useState<'saved' | { error: unknown } | null>(null)
+  const { draft, edit, dirty, saving, status, handleSave } = useDraftEditor(
+    booking.note,
+    async (text) => {
+      const saved = await saveBookingNote(booking.id, text)
+      // Reload first, so the row's preview (and booking.note) show the saved text.
+      await onSaved()
+      return saved
+    },
+    drafts.get(booking),
+  )
   const inputId = `note-${booking.id}`
 
   useEffect(() => {
-    if (booking.note === base) return
-    if (draft === base) setDraft(booking.note)
-    setBase(booking.note)
-  }, [booking.note, base, draft])
-
-  useEffect(() => {
-    if (status !== 'saved') return
-    const id = setTimeout(() => setStatus(null), 3000)
-    return () => clearTimeout(id)
-  }, [status])
-
-  const dirty = draft.trim() !== booking.note
-
-  async function handleSave() {
-    setSaving(true)
-    setStatus(null)
-    try {
-      const saved = await saveBookingNote(booking.id, draft)
-      // Reload first, so the row's preview (and booking.note) show the saved text.
-      await onSaved()
-      setDraft(saved)
-      setBase(saved)
-      setStatus('saved')
-    } catch (err) {
-      setStatus({ error: err })
-    } finally {
-      setSaving(false)
-    }
-  }
+    drafts.set(booking, dirty ? draft : null)
+  }, [drafts, booking, draft, dirty])
 
   return (
     <div className="space-y-2">
@@ -674,11 +701,8 @@ function NoteEditor({ booking, onSaved }: { booking: AdminBooking; onSaved: () =
         rows={3}
         maxLength={NOTE_MAX_LENGTH}
         value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value)
-          setStatus(null)
-        }}
-        disabled={saving}
+        onChange={(e) => edit(e.target.value)}
+        disabled={disabled || saving}
         placeholder={t.dashboard.notePlaceholder}
         className="block w-full resize-y rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50"
       />
@@ -687,7 +711,7 @@ function NoteEditor({ booking, onSaved }: { booking: AdminBooking; onSaved: () =
         <div className="flex items-center gap-3">
           {status === 'saved' && <span className="text-sm font-medium text-emerald-600">✓ {t.dashboard.noteSaved}</span>}
           {dirty && status !== 'saved' && <span className="text-sm text-amber-600">{t.dashboard.noteUnsaved}</span>}
-          <Button className="px-3! py-1.5! text-xs" onClick={handleSave} disabled={!dirty || saving}>
+          <Button className="px-3! py-1.5! text-xs" onClick={handleSave} disabled={!dirty || saving || disabled}>
             {saving && <Spinner className="h-3 w-3" />} {saving ? t.dashboard.noteSaving : t.dashboard.noteSave}
           </Button>
         </div>
