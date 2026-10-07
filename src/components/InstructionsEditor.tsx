@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
 import { saveInstructions } from '../lib/adminStore'
+import { useDraftEditor } from '../hooks/useDraftEditor'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Alert, Button, Card, Spinner } from './ui'
 
@@ -10,43 +10,11 @@ type Props = { propertyId: string; instructions: string; disabled?: boolean; onS
 
 export default function InstructionsEditor({ propertyId, instructions, disabled = false, onSaved }: Props) {
   const { t } = useI18n()
-  const [draft, setDraft] = useState(instructions)
-  // The server value the current draft was based on. While the admin hasn't
-  // edited anything, background refreshes update the draft; once they start
-  // typing, their edits are kept.
-  const [base, setBase] = useState(instructions)
-  const [saving, setSaving] = useState(false)
-  const [status, setStatus] = useState<'saved' | { error: unknown } | null>(null)
-
-  useEffect(() => {
-    if (instructions === base) return
-    if (draft === base) setDraft(instructions)
-    setBase(instructions)
-  }, [instructions, base, draft])
-
-  useEffect(() => {
-    if (status !== 'saved') return
-    const id = setTimeout(() => setStatus(null), 3000)
-    return () => clearTimeout(id)
-  }, [status])
-
-  const dirty = draft.trim() !== instructions
-
-  async function handleSave() {
-    setSaving(true)
-    setStatus(null)
-    try {
-      const saved = await saveInstructions(propertyId, draft)
-      setDraft(saved)
-      setBase(saved)
-      onSaved(saved)
-      setStatus('saved')
-    } catch (err) {
-      setStatus({ error: err })
-    } finally {
-      setSaving(false)
-    }
-  }
+  const { draft, edit, dirty, saving, status, handleSave } = useDraftEditor(instructions, async (text) => {
+    const saved = await saveInstructions(propertyId, text)
+    onSaved(saved)
+    return saved
+  })
 
   return (
     <Card>
@@ -61,10 +29,7 @@ export default function InstructionsEditor({ propertyId, instructions, disabled 
         rows={5}
         maxLength={MAX_LENGTH}
         value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value)
-          setStatus(null)
-        }}
+        onChange={(e) => edit(e.target.value)}
         disabled={disabled || saving}
         placeholder={t.instructions.placeholder}
         className="mt-4 block w-full resize-y rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50"
