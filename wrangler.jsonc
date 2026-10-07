@@ -1,0 +1,12 @@
+// Cloudflare Workers Builds deploys the Vite build in ./dist as static assets.
+// "name" must match the Worker's name in the Cloudflare dashboard.
+{
+  "name": "to-see-a-house",
+  "compatibility_date": "2026-10-06",
+  "assets": {
+    "directory": "./dist",
+    // The app uses path routes (/p/<slug>, /dashboard): serve index.html for
+    // any path that isn't a file.
+    "not_found_handling": "single-page-application"
+  }
+}
