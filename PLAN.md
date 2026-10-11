@@ -8,7 +8,7 @@
 | Domain | Own domain, DNS on Cloudflare | `.com` bought on Cloudflare at cost; `.co.il` bought from an Israeli registrar with nameservers pointed to Cloudflare. Free HTTPS and email forwarding (`info@…`) |
 | Backend | Supabase, Frankfurt region | Auth, Postgres, row-level security, edge functions. Replaces jsonbin.io |
 | Guest verification | SMS OTP via 019 SMS (codes generated and checked by our own edge functions) | ≈ ₪0.024 per SMS vs ≈ $0.22 per Twilio Verify check. Switching provider is one file (`supabase/functions/_shared/sms.ts`). WhatsApp (019, ₪0.075) can be added later |
-| Payments | Israeli provider (Grow or Cardcom) | Stripe doesn't support Israeli merchants; these issue tax invoices |
+| Payments | CardCom ([docs/cardcom-integration.md](docs/cardcom-integration.md)) | Stripe doesn't support Israeli merchants; CardCom issues the receipts / tax invoices and saves a card token for renewals |
 
 ## Users
 
@@ -50,7 +50,7 @@ Migration: [supabase/migrations/20261004000000_init.sql](supabase/migrations/202
 2. **Accounts.** Sign-up (personal / agent), login, property list, property and date editor, public `/p/<slug>` page.
 3. **Guest OTP.** Edge functions + SMS/WhatsApp provider + signed token. Revoke anon access to the `book_guest_slot` / `reschedule_guest_booking` / `cancel_guest_booking` / `find_guest_bookings` functions. *Code done; waiting for the 019 SMS account (until then `SMS_PROVIDER=log`).*
 4. **Agencies.** Create agency, invite link/code, assign agents, leave/remove agent. *Code done: apply `…_agencies.sql`.* Not yet: handing the agency to another admin, deleting an agency.
-5. **Payments.** Checkout + webhook edge functions update `subscription_status`. Agents and agencies need an active subscription to create properties; on a lapse, keep their data. *Done last: waiting for a contract with the payment provider. Until then agent and agency accounts are free.*
+5. **Payments.** CardCom checkout + webhook + daily renewal edge functions update `subscription_status`. Agents and agencies need an active subscription to create properties; on a lapse, keep their data. Agent plan, and two agency tiers (2 or 5 agents); prorated upgrades on the saved card, downgrades at renewal. Spec and decisions: [docs/cardcom-integration.md](docs/cardcom-integration.md). *In progress: spec settled; `…_payments.sql` written. Apply it together with the `create-checkout` and `payment-webhook` deploy, not before: from then on agents and agencies can't add properties without a subscription. Until then agent and agency accounts are free.*
 6. **Launch on Cloudflare.** Buy the domain, move hosting from Vercel to Cloudflare Pages, connect the domain, delete `netlify.toml` / `vercel.json`. *Done.*
 7. **Calendar sync.** First a private ICS subscription link per user (works with Google, Apple, Outlook; read-only, refreshed by the calendar app). Later, if needed, two-way Google / Outlook sync via OAuth, with tokens stored in Supabase and a scheduled edge function. Both run in Supabase, not on the host. *ICS link: code done: apply `…_calendar_feed.sql`, deploy `calendar-feed`, optionally set `APP_URL`.*
 
