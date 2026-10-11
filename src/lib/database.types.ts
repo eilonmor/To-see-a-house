@@ -233,6 +233,140 @@ export type Database = {
         Update: Partial<Database['public']['Tables']['calendar_feeds']['Insert']>
         Relationships: [Relationship<'calendar_feeds_user_id_fkey', 'user_id', 'profiles'>]
       }
+      // plans, subscriptions and payments (…_payments.sql) were added by hand
+      // in the generator's format; regenerating replaces them. The browser may
+      // select only some columns of subscriptions and payments (column grants):
+      // see src/lib/billingStore.ts.
+      plans: {
+        Row: {
+          code: string
+          audience: string
+          period: string
+          price: number
+          list_price: number
+          discount_percent: number
+          agent_seats: number | null
+          name_he: string
+          name_en: string
+          active: boolean
+        }
+        Insert: {
+          code: string
+          audience: string
+          period: string
+          price: number
+          list_price: number
+          discount_percent?: number
+          agent_seats?: number | null
+          name_he: string
+          name_en: string
+          active?: boolean
+        }
+        Update: Partial<Database['public']['Tables']['plans']['Insert']>
+        Relationships: []
+      }
+      subscriptions: {
+        Row: {
+          id: string
+          user_id: string | null
+          org_id: string | null
+          plan_code: string
+          price: number
+          period: string
+          status: Database['public']['Enums']['subscription_status']
+          current_period_start: string
+          current_period_end: string
+          cancel_at_period_end: boolean
+          failed_renewals: number
+          next_plan_code: string | null
+          ended_reason: string | null
+          created_at: string
+          canceled_at: string | null
+          cardcom_token: string | null
+          cardcom_token_card_year: number | null
+          cardcom_token_card_month: number | null
+          cardcom_token_approval_number: string | null
+          cardcom_token_card_owner_identity_number: string | null
+          cardcom_token_expires_on: string | null
+        }
+        Insert: {
+          id?: string
+          user_id?: string | null
+          org_id?: string | null
+          plan_code: string
+          price: number
+          period: string
+          status?: Database['public']['Enums']['subscription_status']
+          current_period_start: string
+          current_period_end: string
+          cancel_at_period_end?: boolean
+          failed_renewals?: number
+          next_plan_code?: string | null
+          ended_reason?: string | null
+          created_at?: string
+          canceled_at?: string | null
+          cardcom_token?: string | null
+          cardcom_token_card_year?: number | null
+          cardcom_token_card_month?: number | null
+          cardcom_token_approval_number?: string | null
+          cardcom_token_card_owner_identity_number?: string | null
+          cardcom_token_expires_on?: string | null
+        }
+        Update: Partial<Database['public']['Tables']['subscriptions']['Insert']>
+        Relationships: [
+          Relationship<'subscriptions_user_id_fkey', 'user_id', 'profiles'>,
+          Relationship<'subscriptions_org_id_fkey', 'org_id', 'organizations'>,
+        ]
+      }
+      payments: {
+        Row: {
+          id: string
+          subscription_id: string | null
+          user_id: string | null
+          org_id: string | null
+          bought_by: string | null
+          plan_code: string
+          amount: number
+          kind: string
+          status: string
+          created_at: string
+          paid_at: string | null
+          cardcom_low_profile_id: string | null
+          cardcom_operation: string | null
+          cardcom_tranzaction_id: number | null
+          cardcom_response_code: number | null
+          cardcom_description: string | null
+          cardcom_document_type: string | null
+          cardcom_document_number: number | null
+        }
+        Insert: {
+          id?: string
+          subscription_id?: string | null
+          user_id?: string | null
+          org_id?: string | null
+          bought_by?: string | null
+          plan_code: string
+          amount: number
+          kind: string
+          status?: string
+          created_at?: string
+          paid_at?: string | null
+          cardcom_low_profile_id?: string | null
+          cardcom_operation?: string | null
+          cardcom_tranzaction_id?: number | null
+          cardcom_response_code?: number | null
+          cardcom_description?: string | null
+          cardcom_document_type?: string | null
+          cardcom_document_number?: number | null
+        }
+        Update: Partial<Database['public']['Tables']['payments']['Insert']>
+        Relationships: [
+          Relationship<'payments_subscription_id_fkey', 'subscription_id', 'subscriptions'>,
+          Relationship<'payments_user_id_fkey', 'user_id', 'profiles'>,
+          Relationship<'payments_org_id_fkey', 'org_id', 'organizations'>,
+          Relationship<'payments_bought_by_fkey', 'bought_by', 'profiles'>,
+        ]
+      }
     }
     Views: { [_ in never]: never }
     Functions: {

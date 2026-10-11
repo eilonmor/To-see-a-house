@@ -96,9 +96,9 @@ export async function applyPendingAccountType(profile: Profile): Promise<boolean
 }
 
 /**
- * Free owner -> agent: unlimited properties and dates. Only from 'personal'
- * (agency members already are agents or admins). From phase 5 this needs a
- * subscription.
+ * Free owner -> agent. Only from 'personal' (agency members already are
+ * agents or admins). Used for Google sign-ups as an agent; the agent still
+ * needs a subscription (billing page) to add properties.
  */
 export async function upgradeToAgent(): Promise<void> {
   await run((db) => db.rpc('become_agent'))

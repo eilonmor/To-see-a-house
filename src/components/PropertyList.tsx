@@ -1,13 +1,11 @@
-import { useState } from 'react'
 import { fetchProperties, type PropertySummary } from '../lib/adminStore'
 import { pendingInvite } from '../lib/agencyStore'
-import { nextPropertyAllowedAt, upgradeToAgent } from '../lib/auth'
+import { nextPropertyAllowedAt } from '../lib/auth'
 import { formatDate, israelDate } from '../lib/bookingStore'
 import { usePolledData } from '../hooks/usePolledData'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { useAccount } from './AccountGate'
-import { useConfirm } from './ConfirmDialog'
-import { Alert, Button, Card, Link, Loading, Redirect, Spinner } from './ui'
+import { Alert, Card, Link, Loading, Redirect } from './ui'
 
 /** The dashboard home: every property the user manages. */
 export default function PropertyList() {
@@ -71,47 +69,21 @@ export default function PropertyList() {
   )
 }
 
-/** The free plan's limits, and the way out of them. */
+/** The free plan's limits, and the way out of them: an agent plan (billing page). */
 function FreePlanNote() {
   const { t } = useI18n()
-  const { reloadProfile } = useAccount()
-  const confirm = useConfirm()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-
-  async function upgrade() {
-    if (!(await confirm(t.properties.confirmUpgrade))) return
-    setBusy(true)
-    setError('')
-    try {
-      await upgradeToAgent()
-    } catch (err) {
-      setError(`${t.properties.upgradeError} ${errorText(err, t)}`)
-      setBusy(false)
-      return
-    }
-    try {
-      // The profile is now an agent's: this note goes away.
-      await reloadProfile()
-    } catch {
-      // Upgraded, but this page still shows the free plan. (Upgrading again is harmless.)
-      setError(t.account.reloadAfterAction)
-      setBusy(false)
-    }
-  }
-
   return (
-    <div className="space-y-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0 text-sm">
-          <p className="text-slate-600">{t.properties.freePlan}</p>
-          <p className="mt-0.5 text-slate-500">{t.properties.upgradeHelp}</p>
-        </div>
-        <Button variant="secondary" className="px-3! py-1.5! text-xs" onClick={upgrade} disabled={busy}>
-          {busy && <Spinner className="h-3 w-3" />} {t.properties.upgrade}
-        </Button>
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3">
+      <div className="min-w-0 text-sm">
+        <p className="text-slate-600">{t.properties.freePlan}</p>
+        <p className="mt-0.5 text-slate-500">{t.properties.upgradeHelp}</p>
       </div>
-      {error && <Alert>{error}</Alert>}
+      <Link
+        href="/dashboard/billing"
+        className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+      >
+        {t.properties.upgrade}
+      </Link>
     </div>
   )
 }
