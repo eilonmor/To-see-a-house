@@ -533,7 +533,7 @@ begin
   begin
     select * into q from public.plan_change_check(p_user_id, p_plan);
     -- The payment was made for this subscription (change-plan links it).
-    if q.change <> 'upgrade' or (pay.id is not null and q.subscription_id <> pay.subscription_id) then
+    if q.change <> 'upgrade' or (pay.id is not null and q.subscription_id is distinct from pay.subscription_id) then
       raise exception 'plan_change_not_allowed';
     end if;
 
@@ -667,10 +667,15 @@ $$;
 
 -- The renewal's result, in one transaction. Paid: the period moves forward
 -- from the old end (and a scheduled downgrade takes effect). Failed:
--- past_due, and canceled after the 3rd failure in a row. Returns the
--- subscription's new status, or null if the payment was already finished.
-create or replace function public.finish_renewal(p_payment_id uuid, p_paid boolean, p_tranzaction_id bigint)
-returns public.subscription_status
+-- past_due, and canceled after the 3rd failure in a row. Returns
+-- { status } (the subscription's new status), { already_done: true } if the
+-- payment was finished before, or { status, refund: true } when the card was
+-- charged but the subscription had ended meanwhile (only possible when a
+-- payment is finished by hand): the payment is paid, the subscription
+-- untouched, and the money must be refunded in CardCom's dashboard.
+drop function if exists public.finish_renewal(uuid, boolean, bigint);
+create function public.finish_renewal(p_payment_id uuid, p_paid boolean, p_tranzaction_id bigint)
+returns jsonb
 language plpgsql security definer set search_path = ''
 as $$
 declare
@@ -682,7 +687,17 @@ begin
     raise exception 'payment_not_found';
   end if;
   if pay.status <> 'pending' then
-    return null;
+    return jsonb_build_object('already_done', true);
+  end if;
+
+  select * into sub from public.subscriptions where id = pay.subscription_id for update;
+  if sub.status not in ('active', 'past_due') then
+    update public.payments
+    set status = case when p_paid then 'paid' else 'failed' end,
+        paid_at = case when p_paid then now() end,
+        cardcom_tranzaction_id = p_tranzaction_id
+    where id = pay.id;
+    return jsonb_build_object('status', sub.status, 'refund', p_paid);
   end if;
 
   if p_paid then
@@ -708,29 +723,42 @@ begin
   end if;
 
   perform public.sync_subscription_status(sub.user_id, sub.org_id);
-  return sub.status;
+  return jsonb_build_object('status', sub.status);
 end
 $$;
 
 -- Ends the subscriptions whose renewal was stopped and whose period is over,
--- without charging. Returns how many.
-create or replace function public.expire_subscriptions() returns int
+-- without charging. A subscription with a renewal charge in flight (or never
+-- finished) is left alone until that payment is finished: the renewal may
+-- have been charged before the user stopped it. Returns { expired: count,
+-- pending: [subscription ids left alone] }.
+drop function if exists public.expire_subscriptions();
+create function public.expire_subscriptions() returns jsonb
 language plpgsql security definer set search_path = ''
 as $$
 declare
   r record;
   n int := 0;
+  pending uuid[];
 begin
   for r in
-    update public.subscriptions
+    update public.subscriptions s
     set status = 'canceled', canceled_at = now(), ended_reason = 'canceled'
-    where cancel_at_period_end and status in ('active', 'past_due') and current_period_end <= now()
-    returning user_id, org_id
+    where s.cancel_at_period_end and s.status in ('active', 'past_due') and s.current_period_end <= now()
+      and not exists (
+        select 1 from public.payments p
+        where p.subscription_id = s.id and p.kind = 'renewal' and p.status = 'pending'
+      )
+    returning s.user_id, s.org_id
   loop
     perform public.sync_subscription_status(r.user_id, r.org_id);
     n := n + 1;
   end loop;
-  return n;
+
+  select coalesce(array_agg(s.id), '{}') into pending
+  from public.subscriptions s
+  where s.cancel_at_period_end and s.status in ('active', 'past_due') and s.current_period_end <= now();
+  return jsonb_build_object('expired', n, 'pending', to_jsonb(pending));
 end
 $$;
 
@@ -788,3 +816,15 @@ grant execute on function
   public.schedule_plan_change(text),
   public.set_subscription_renewal(uuid, boolean)
 to authenticated;
+
+-- The edge functions call these as service_role.
+grant execute on function
+  public.sync_subscription_status(uuid, uuid),
+  public.checkout_payer(uuid, text),
+  public.complete_checkout(uuid, bigint, text, date, int, int, text, text),
+  public.plan_change_check(uuid, text),
+  public.complete_upgrade(uuid, text, uuid, bigint),
+  public.start_renewal(uuid),
+  public.finish_renewal(uuid, boolean, bigint),
+  public.expire_subscriptions()
+to service_role;

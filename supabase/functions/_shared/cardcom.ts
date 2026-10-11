@@ -23,13 +23,22 @@ function credentials() {
  * POSTs `body` (plus the terminal number and API name) to `path`, e.g.
  * 'LowProfile/Create', and returns the parsed JSON. Each attempt times out
  * after 5 seconds; a network error, timeout or non-200 status is retried once,
- * then thrown. A retried charge can't charge twice: Transactions/Transaction
- * calls send the payment id as ExternalUniqTranId.
+ * then thrown.
+ *
+ * Charges (Transactions/Transaction) pass `{ retry: false }`: a timed-out
+ * charge may have gone through, and a retry with the same ExternalUniqTranId
+ * would be refused as a duplicate and look like a decline. When a charge
+ * throws, its outcome is unknown: leave the payment pending and check it in
+ * CardCom's dashboard.
  */
-export async function cardcomPost<T = Record<string, unknown>>(path: string, body: Record<string, unknown>): Promise<T> {
+export async function cardcomPost<T = Record<string, unknown>>(
+  path: string,
+  body: Record<string, unknown>,
+  { retry = true }: { retry?: boolean } = {},
+): Promise<T> {
   const payload = JSON.stringify({ ...body, ...credentials() })
   let lastError: unknown
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= (retry ? 2 : 1); attempt++) {
     try {
       const res = await fetch(BASE_URL + path, {
         method: 'POST',

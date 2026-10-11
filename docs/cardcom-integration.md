@@ -154,6 +154,13 @@ Edge function secrets (`npx supabase secrets set …`), never in `.env*`:
   name goes in the body. `cardcomPost` adds `TerminalNumber` and `ApiName` to every
   body itself, so the request bodies below show them only for completeness; callers
   never read the secrets.
+- **Charges are never retried**: `Transactions/Transaction` (renewals, upgrades)
+  calls `cardcomPost(path, body, { retry: false })`. A timed-out charge may have gone
+  through, and a retry with the same `ExternalUniqTranId` would be refused as a
+  duplicate and look like a decline. When a charge throws (timeout, network error,
+  non-200), its outcome is **unknown**: leave the payment `pending`, `console.error`
+  it, and check it in CardCom's dashboard. `LowProfile/Create` and `GetLpResult`
+  charge nothing and keep the retry.
 - In `supabase/config.toml` add `verify_jwt = false` for `payment-webhook`
   (CardCom has no Supabase session) and `renew-subscriptions` (checks
   `CRON_SECRET`). `create-checkout` and `change-plan` keep the default
@@ -423,7 +430,7 @@ user from the `Authorization` header with `admin.auth.getUser(jwt)`).
 - New error codes in `translations.ts`, Hebrew and English: `subscription_required`,
   `agency_seat_limit`, `plan_not_allowed`, `already_subscribed`, `checkout_unavailable`,
   `use_upgrade`, `plan_change_not_allowed`, `upgrade_payment_failed`,
-  `subscription_not_found`.
+  `subscription_not_found`, `payment_unconfirmed`.
 
 ## Task 5: `renew-subscriptions` edge function
 
@@ -436,7 +443,10 @@ function only talks to CardCom between them.
 
 First `rpc('expire_subscriptions')`: subscriptions with `cancel_at_period_end = true`
 whose period has ended become `canceled` (`ended_reason = 'canceled'`), without
-charging. Returns how many.
+charging. A subscription with a `pending` renewal payment is left alone (the user
+may have stopped the renewal while it was being charged); it ends on a later run,
+once that payment is finished. Returns `{ expired, pending: [subscription ids] }`;
+`console.error` the pending ones.
 
 Then select (service role) the ids of subscriptions with
 `status in ('active','past_due')`, `cancel_at_period_end = false` and
@@ -478,19 +488,26 @@ Then select (service role) the ids of subscriptions with
    ```
    - `CardExpirationMMYY`: month zero-padded to 2 digits + the **last 2 digits** of
      the year (`CardYear` may come back as `28` or `2028`): month 3, year 2028 → `"0328"`.
-   - `ExternalUniqTranId` = the payment id, so a retried request can't charge twice.
+   - `ExternalUniqTranId` = the payment id, so the same payment can't be charged twice.
+   - `{ retry: false }` (Task 1). If the request throws, the outcome is unknown:
+     don't call `finish_renewal`; the payment stays `pending`, and `start_renewal`
+     reports it daily until it's checked by hand.
    - The payer's email: the user's email, or for an agency the agency admin's email.
 3. Response (ignore other fields): `{ ResponseCode, Description, TranzactionId, DocumentNumber, DocumentType }`.
    Save `cardcom_response_code`, `cardcom_description`, the document fields on the
    payment (plain update, service role).
 4. `rpc('finish_renewal', { p_payment_id, p_paid, p_tranzaction_id })`, one
-   transaction, returns the subscription's new status:
+   transaction, returns `{ status }` (the subscription's new status),
+   `{ already_done: true }` if the payment was finished before, or
+   `{ status, refund: true }` if the card was charged but the subscription had
+   ended meanwhile (a payment finished by hand late): the payment is `paid`, the
+   subscription untouched; `console.error` it for a manual refund.
    - paid (`ResponseCode` = 0): payment `paid`; subscription `active`,
      `failed_renewals = 0`, `current_period_start` = the old end,
      `current_period_end += 1 month / 1 year` (from the old end, not from today).
      With a scheduled downgrade, `plan_code` and `price` become the new plan's and
      `next_plan_code` is cleared.
-   - not paid (`ResponseCode` ≠ 0, or the request failed after its retry): payment
+   - not paid (`ResponseCode` ≠ 0): payment
      `failed`, `failed_renewals += 1`, status `past_due`; after the 3rd failure in a
      row `canceled` (`ended_reason = 'failed'`). Also
      `console.error('[cardcom] renewal failed', subscriptionId, Description)`.
@@ -579,10 +596,16 @@ monthly ↔ yearly is refused with `plan_change_not_allowed`.
    "<new plan name> (until <date>)".
 4. `ResponseCode` = 0: save the response fields on the payment, then
    `complete_upgrade`; return `{ upgraded: true }`.
-5. Otherwise, or if the request failed after its retry: payment `failed`,
+5. `ResponseCode` ≠ 0: payment `failed`,
    `console.error('[cardcom] upgrade failed', subscriptionId, Description)`, nothing
    else changes, throw `ApiError('upgrade_payment_failed', 402)`. The app says
    "The charge didn't go through. Your current plan hasn't changed."
+6. The request threw (`{ retry: false }`, outcome unknown): the payment stays
+   `pending`, `console.error('[cardcom] upgrade unconfirmed', paymentId)`, throw
+   `ApiError('payment_unconfirmed', 502)`. The app says "We couldn't confirm the
+   charge. Please don't try again; we'll check it and update your plan." After
+   checking CardCom's dashboard: if it was charged, call `complete_upgrade` by hand
+   with the payment id; if not, set the payment `failed`.
 
 ## Task 7: Stop the renewal (user)
 
