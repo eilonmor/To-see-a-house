@@ -46,6 +46,10 @@ const formatPrice = (amount: number, lang: Lang) =>
 const longDate = (iso: string, lang: Lang) =>
   formatDate(israelDate(new Date(iso)), lang, { day: 'numeric', month: 'long', year: 'numeric' })
 
+/** A plan-change error after which the card may have been charged: checked or refunded by hand. */
+const isChargeIssue = (err: unknown) =>
+  err instanceof BookingError && ['paymentUnconfirmed', 'upgradeRefundDue', 'upgradeInProgress'].includes(err.code)
+
 const planName = (plans: Plan[], code: string, lang: Lang) => plans.find((p) => p.code === code)?.name[lang] ?? code
 
 /**
@@ -138,7 +142,7 @@ export default function BillingPage() {
 /** "Confirming your payment…" until the user's latest checkout is no longer pending. */
 function CheckoutResult({ userId, onConfirmed }: { userId: string; onConfirmed: () => void }) {
   const { t } = useI18n()
-  const [state, setState] = useState<'confirming' | 'paid' | 'failed' | 'timeout'>('confirming')
+  const [state, setState] = useState<'confirming' | 'paid' | 'failed' | 'refund' | 'timeout'>('confirming')
   // Called once; a newer callback (after the profile reloads) doesn't restart polling.
   const confirmed = useRef(onConfirmed)
   useEffect(() => {
@@ -155,7 +159,8 @@ function CheckoutResult({ userId, onConfirmed }: { userId: string; onConfirmed: 
         const latest = (await fetchMyPayments()).find((p) => p.kind === 'checkout' && p.boughtBy === userId)
         if (stopped) return
         if (latest && latest.status !== 'pending') {
-          setState(latest.status)
+          // Paid, but the payer already had a plan: no second one, refunded by hand.
+          setState(latest.refund ? 'refund' : latest.status)
           if (latest.status === 'paid') confirmed.current()
           return
         }
@@ -184,6 +189,7 @@ function CheckoutResult({ userId, onConfirmed }: { userId: string; onConfirmed: 
     )
   }
   if (state === 'paid') return <Alert tone="info">{t.billing.paid}</Alert>
+  if (state === 'refund') return <Alert>{t.billing.checkoutRefundDue}</Alert>
   if (state === 'failed') return <Alert>{t.billing.failed}</Alert>
   return (
     <Alert>
@@ -286,8 +292,8 @@ function PlanChange({
       await action()
     } catch (err) {
       setError(err)
-      // The charge may have gone through: the history shows the pending payment.
-      if (err instanceof BookingError && err.code === 'paymentUnconfirmed') onChanged()
+      // The card may have been charged: the history shows the payment.
+      if (isChargeIssue(err)) onChanged()
     } finally {
       setBusy(null)
     }
@@ -355,7 +361,7 @@ function PlanChange({
       {error != null && (
         <Alert>
           {t.billing.changeError} {errorText(error, t)}
-          {error instanceof BookingError && error.code === 'paymentUnconfirmed' && (
+          {isChargeIssue(error) && (
             <>
               {' '}
               <ContactLink />
@@ -488,9 +494,15 @@ function PaymentHistory({ payments, plans }: { payments: Payment[]; plans: Plan[
               </div>
               <div className="flex items-center gap-2">
                 <span className="font-medium text-slate-900">{formatPrice(p.amount, lang)}</span>
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusStyle[p.status]}`}>
-                  {t.billing.paymentStatus[p.status]}
-                </span>
+                {p.refund ? (
+                  <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+                    {p.refund === 'due' ? t.billing.refundDue : t.billing.refunded}
+                  </span>
+                ) : (
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusStyle[p.status]}`}>
+                    {t.billing.paymentStatus[p.status]}
+                  </span>
+                )}
               </div>
             </li>
           ))}

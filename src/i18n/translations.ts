@@ -335,6 +335,9 @@ const he = {
     downgradeScheduled: (n: number, date: string) => `ב-${date} המנוי יעבור ל-${n} מתווכים.`,
     keepSeats: (n: number) => `להישאר עם ${n} מתווכים`,
     changeError: 'לא ניתן לשנות את המנוי:',
+    refundDue: 'יוחזר',
+    refunded: 'הוחזר',
+    checkoutRefundDue: 'התשלום התקבל, אבל כבר יש לך מנוי פעיל, ולכן לא נוצר מנוי נוסף. נחזיר את הסכום לכרטיס.',
   },
   properties: {
     title: 'הדירות שלי',
@@ -511,6 +514,8 @@ const he = {
     subscriptionNotFound: () => 'המנוי לא נמצא.',
     paymentUnconfirmed: () => 'לא הצלחנו לאשר את החיוב. אל תנסו שוב: נבדוק אותו ונעדכן את המנוי.',
     paymentNotFound: () => 'התשלום לא נמצא.',
+    upgradeRefundDue: () => 'החיוב עבר, אבל לא ניתן היה לשנות את המנוי. נחזיר את הסכום לכרטיס.',
+    upgradeInProgress: () => 'יש שינוי מנוי שעדיין בבדיקה. נסו שוב בעוד כמה דקות; אם זה חוזר, צרו איתנו קשר.',
   },
 }
 
@@ -842,6 +847,9 @@ const en: Translation = {
     downgradeScheduled: (n: number, date: string) => `On ${date} the plan switches to ${n} agents.`,
     keepSeats: (n: number) => `Keep ${n} agents`,
     changeError: 'Could not change the plan:',
+    refundDue: 'To be refunded',
+    refunded: 'Refunded',
+    checkoutRefundDue: "The payment went through, but you already have an active plan, so no second plan was created. We'll refund the amount to your card.",
   },
   properties: {
     title: 'My properties',
@@ -1021,6 +1029,8 @@ const en: Translation = {
     subscriptionNotFound: () => 'The plan was not found.',
     paymentUnconfirmed: () => "We couldn't confirm the charge. Please don't try again; we'll check it and update your plan.",
     paymentNotFound: () => 'The payment was not found.',
+    upgradeRefundDue: () => "The charge went through, but the plan couldn't be changed. We'll refund the amount to your card.",
+    upgradeInProgress: () => 'A plan change is still being confirmed. Try again in a few minutes; if this keeps happening, contact us.',
   },
 }
 

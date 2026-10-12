@@ -103,7 +103,43 @@ async function renewAll(started: number): Promise<Summary> {
     summary.errors++
     console.error('[renew]', err instanceof Error ? err.message : String(err))
   }
+  try {
+    await reportOpenIssues()
+  } catch (err) {
+    summary.errors++
+    console.error('[renew] report', err instanceof Error ? err.message : String(err))
+  }
   return summary
+}
+
+// An upgrade charge takes seconds; one still pending after this was never confirmed.
+const UPGRADE_UNCONFIRMED_MS = 60 * 60_000
+
+/**
+ * Logged every day until someone handles them in CardCom's dashboard: paid
+ * charges to refund (then set refunded_at), and upgrade charges never
+ * confirmed (finish with complete_upgrade if charged, else set failed). Each
+ * of them also blocks further upgrades of its subscription.
+ */
+async function reportOpenIssues(): Promise<void> {
+  const [refundsRes, upgradesRes] = await Promise.all([
+    admin
+      .from('payments')
+      .select('id, refund_reason, amount')
+      .not('refund_reason', 'is', null)
+      .is('refunded_at', null)
+      .order('created_at'),
+    admin
+      .from('payments')
+      .select('id, subscription_id')
+      .eq('kind', 'upgrade')
+      .eq('status', 'pending')
+      .lt('created_at', new Date(Date.now() - UPGRADE_UNCONFIRMED_MS).toISOString()),
+  ])
+  const refunds = must(refundsRes, 'payments')
+  const upgrades = must(upgradesRes, 'payments')
+  if (refunds.length) console.error('[cardcom] refunds due, refund in CardCom and set refunded_at', refunds)
+  if (upgrades.length) console.error('[cardcom] upgrades unconfirmed, check them in CardCom', upgrades)
 }
 
 async function renewOne(subscriptionId: string, summary: Summary): Promise<void> {

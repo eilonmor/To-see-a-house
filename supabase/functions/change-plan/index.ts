@@ -4,7 +4,7 @@
 // scheduled by the billing page itself (schedule_plan_change), not here.
 // See docs/cardcom-integration.md, Task 6.
 //
-// The amount and the payer come from plan_change_check, never from the
+// The amount and the payer come from start_upgrade, never from the
 // browser. complete_upgrade does the bookkeeping in one transaction.
 
 import { cardcomCharge } from '../_shared/cardcom.ts'
@@ -12,11 +12,9 @@ import { CARD_COLUMNS, payerOf, responseFields, tokenChargeBody, type ChargeBody
 import { admin, must, rpc, sessionUser } from '../_shared/db.ts'
 import { ApiError, handler, str } from '../_shared/http.ts'
 
-type Change = { subscription_id: string; change: 'upgrade' | 'downgrade'; amount: number; new_org_id: string | null }
+type StartResult = { subscription_id: string; amount: number; new_org_id: string; payment_id: string | null }
 
 type UpgradeResult = { result: 'upgraded' | 'duplicate' | 'already_done'; subscription_id: string | null }
-
-const UNIQUE_VIOLATION = '23505'
 
 /** The period's end (the next charge date), for the receipt: "(until 12.11.2026)". */
 const untilDate = (iso: string, lang: 'he' | 'en') =>
@@ -35,28 +33,12 @@ Deno.serve(
     const lang = str(body.lang)
     if (!plan || (lang !== 'he' && lang !== 'en')) throw new ApiError('bad_request')
 
-    const [change] = await rpc<Change[]>('plan_change_check', { p_user_id: user.id, p_plan: plan })
-    if (!change) throw new Error('plan_change_check returned no row')
-    // Downgrades wait for the renewal: the billing page calls schedule_plan_change.
-    if (change.change !== 'upgrade') throw new ApiError('plan_change_not_allowed')
-    const subscriptionId = change.subscription_id
-
-    // An earlier upgrade whose charge couldn't be confirmed may have been
-    // charged: it's checked by hand first. Until then the plan doesn't change,
-    // even for free, so that payment can still complete the upgrade it paid for.
-    const unconfirmed = must(
-      await admin
-        .from('payments')
-        .select('id')
-        .eq('subscription_id', subscriptionId)
-        .eq('kind', 'upgrade')
-        .eq('status', 'pending'),
-      'payments',
-    )
-    if (unconfirmed.length) {
-      console.error('[cardcom] upgrade still unconfirmed', unconfirmed.map((p) => p.id))
-      throw new ApiError('payment_unconfirmed', 409)
-    }
+    // Checks the change under a lock and inserts the pending payment. Raises
+    // plan_change_not_allowed (also for downgrades: the billing page calls
+    // schedule_plan_change for those) or upgrade_in_progress (another upgrade
+    // of it is being charged, or was never confirmed).
+    const start = await rpc<StartResult>('start_upgrade', { p_user_id: user.id, p_plan: plan })
+    const subscriptionId = start.subscription_id
 
     const upgrade = (paymentId: string | null, tranzactionId: number | null) =>
       rpc<UpgradeResult>('complete_upgrade', {
@@ -66,29 +48,13 @@ Deno.serve(
         p_tranzaction_id: tranzactionId,
       })
 
-    const amount = Math.round(Number(change.amount) * 100) / 100
-    if (amount === 0) {
+    if (!start.payment_id) {
+      // Under ₪1 for the rest of the period: no charge.
       await upgrade(null, null)
       return { upgraded: true }
     }
-
-    const inserted = await admin
-      .from('payments')
-      .insert({
-        // complete_upgrade checks it, then moves it to the new subscription.
-        subscription_id: subscriptionId,
-        org_id: change.new_org_id,
-        bought_by: user.id,
-        plan_code: plan,
-        amount,
-        kind: 'upgrade',
-        status: 'pending',
-      })
-      .select('id')
-      .single()
-    // payments_one_pending_upgrade_idx: another request (two tabs) is charging it right now.
-    if (inserted.error?.code === UNIQUE_VIOLATION) throw new ApiError('payment_unconfirmed', 409)
-    const paymentId: string = must(inserted, 'payments').id
+    const paymentId = start.payment_id
+    const amount = Math.round(Number(start.amount) * 100) / 100
 
     const markFailed = async (fields: Record<string, unknown> = {}) => {
       const failed = await admin
@@ -107,7 +73,7 @@ Deno.serve(
         admin.from('subscriptions').select(`current_period_end, ${CARD_COLUMNS}`).eq('id', subscriptionId).single(),
         admin.from('plans').select('name_he, name_en').eq('code', plan).single(),
         // The agency pays from now on: the same name and email its renewals use.
-        payerOf({ user_id: null, org_id: change.new_org_id }),
+        payerOf({ user_id: null, org_id: start.new_org_id }),
       ])
       const sub = must(subRes, 'subscriptions')
       const planRow = must(planRes, 'plans')
@@ -163,11 +129,10 @@ Deno.serve(
       throw new ApiError('payment_unconfirmed', 502)
     }
     if (done.result === 'duplicate') {
-      // Charged, but the subscription changed meanwhile (two tabs, or its
-      // renewal was stopped), so this payment didn't change the plan: refund
-      // it in CardCom. The user is told it's being checked, not that it worked.
+      // Charged, but the change wasn't allowed any more, so the plan didn't
+      // change. complete_upgrade set refund_reason: refund it in CardCom.
       console.error('[cardcom] duplicate upgrade payment', paymentId)
-      throw new ApiError('payment_unconfirmed', 409)
+      throw new ApiError('upgrade_refund_due', 409)
     }
     return { upgraded: true }
   }),

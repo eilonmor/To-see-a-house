@@ -58,12 +58,15 @@ export type Payment = {
   createdAt: string
   paidAt: string | null
   documentNumber: number | null
+  /** A paid charge that bought nothing: refunded by hand ("due" until then). */
+  refund: 'due' | 'done' | null
 }
 
 const SUBSCRIPTION_COLUMNS =
   'id, user_id, org_id, plan_code, price, period, status, current_period_start, current_period_end, cancel_at_period_end, next_plan_code'
 
-const PAYMENT_COLUMNS = 'id, bought_by, plan_code, amount, kind, status, created_at, paid_at, cardcom_document_number'
+const PAYMENT_COLUMNS =
+  'id, bought_by, plan_code, amount, kind, status, created_at, paid_at, cardcom_document_number, refund_reason, refunded_at'
 
 /** Plans on sale, cheapest first. */
 export async function fetchPlans(): Promise<Plan[]> {
@@ -136,6 +139,7 @@ export async function fetchMyPayments(): Promise<Payment[]> {
     createdAt: r.created_at,
     paidAt: r.paid_at,
     documentNumber: r.cardcom_document_number,
+    refund: r.refund_reason ? (r.refunded_at ? 'done' : 'due') : null,
   }))
 }
 

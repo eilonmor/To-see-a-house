@@ -338,6 +338,8 @@ export type Database = {
           cardcom_description: string | null
           cardcom_document_type: string | null
           cardcom_document_number: number | null
+          refund_reason: string | null
+          refunded_at: string | null
         }
         Insert: {
           id?: string
@@ -358,6 +360,8 @@ export type Database = {
           cardcom_description?: string | null
           cardcom_document_type?: string | null
           cardcom_document_number?: number | null
+          refund_reason?: string | null
+          refunded_at?: string | null
         }
         Update: Partial<Database['public']['Tables']['payments']['Insert']>
         Relationships: [
