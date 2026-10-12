@@ -20,7 +20,7 @@
 
 - **Ownership follows the payer.** A property belongs to a user or to an agency. When an agent leaves an agency, agency-owned properties stay with the agency and the agent's own properties stay with the agent.
 - **Choosing the owner.** Agency members (admin and agents) choose when they create a property: the agency (default) or themselves. The choice is final, except that a property you own can be passed to the agency (one-way; an agent who passes one stays assigned to it). Properties from before joining stay with their owner until passed.
-- **Upgrading.** A free owner can become an agent without an invite (from phase 5: with a subscription).
+- **Upgrading.** A free owner becomes an agent without an invite, by buying the agent plan (phase 5).
 - **Agency invites:** the admin creates a one-time code (valid 7 days), shared as a link `/join/<code>` or typed in manually.
 - **Guests** never have an account. Their identity is the normalized phone number (`+972…` = `0…`).
 - **Notifications:** none by SMS/WhatsApp. SMS/WhatsApp is only for guest OTP. Agents see bookings in the app.
@@ -43,6 +43,7 @@ Migration: [supabase/migrations/20261004000000_init.sql](supabase/migrations/202
 - Personal-plan limits, slot validation and no-double-booking are enforced in the database (triggers + unique constraints), so the browser can't bypass them.
 - Row-level security: owners, agency admins and assigned agents manage their properties; guests reach data only through functions that never expose other guests' names or phones.
 - Error codes raised for the UI to translate: `personal_property_limit`, `personal_property_cooldown`, `personal_date_limit`, `date_in_past`, `slot_taken`, `booking_not_found`, `unknown_slot`, `day_closed`, `invalid_phone`, `missing_name`, `invalid_invite`, `already_in_agency`, `not_agency_admin`, `admin_cannot_leave`, `missing_agency_name`, `not_in_agency`, `not_own_property`, `missing_title`.
+- Payments ([`…_payments.sql`](supabase/migrations/20261012000000_payments.sql)): tables `plans`, `subscriptions`, `payments`; error codes `subscription_required`, `agency_seat_limit`, `plan_not_allowed`, `already_subscribed`, `use_upgrade`, `plan_change_not_allowed`, `upgrade_in_progress`, `renewal_in_progress`, `subscription_not_found`, `covered_by_agency`; from the edge functions `checkout_unavailable`, `upgrade_payment_failed`, `upgrade_refund_due`, `payment_unconfirmed`.
 
 ## Phases
 
@@ -50,7 +51,12 @@ Migration: [supabase/migrations/20261004000000_init.sql](supabase/migrations/202
 2. **Accounts.** Sign-up (personal / agent), login, property list, property and date editor, public `/p/<slug>` page.
 3. **Guest OTP.** Edge functions + SMS/WhatsApp provider + signed token. Revoke anon access to the `book_guest_slot` / `reschedule_guest_booking` / `cancel_guest_booking` / `find_guest_bookings` functions. *Code done; waiting for the 019 SMS account (until then `SMS_PROVIDER=log`).*
 4. **Agencies.** Create agency, invite link/code, assign agents, leave/remove agent. *Code done: apply `…_agencies.sql`.* Not yet: handing the agency to another admin, deleting an agency.
-5. **Payments.** CardCom checkout + webhook + daily renewal edge functions update `subscription_status`. Agents and agencies need an active subscription to create properties; on a lapse, keep their data. Agent plan, and two agency tiers (2 or 5 agents); prorated upgrades on the saved card, downgrades at renewal. Spec and decisions: [docs/cardcom-integration.md](docs/cardcom-integration.md). *In progress: spec settled; `…_payments.sql` written. Apply it together with the `create-checkout` and `payment-webhook` deploy, not before: from then on agents and agencies can't add properties without a subscription. Until then agent and agency accounts are free.*
+5. **Payments.** CardCom checkout + webhook + daily renewal edge functions update `subscription_status`. Agents and agencies need an active subscription to create properties; on a lapse, keep their data. Agent plan, and two agency tiers (2 or 5 agents); prorated upgrades on the saved card, downgrades at renewal. Spec and decisions: [docs/cardcom-integration.md](docs/cardcom-integration.md). *Code done (tasks 1–8). Until it's deployed, agent and agency accounts are free.* Left before launch:
+   - **Deploy** (README step 11), in this order: the CardCom secrets, the four functions (`create-checkout`, `payment-webhook`, `change-plan`, `renew-subscriptions`), then `…_payments.sql` last (from then on agents and agencies can't add properties without a subscription), then the frontend. Then regenerate `src/lib/database.types.ts` (until now it's been updated by hand).
+   - **Test** on CardCom's test terminal: the checklist in "Testing with the test terminal" in the spec.
+   - **Cron job.** Create the daily `renew-subscriptions` job with `CRON_SECRET` (README step 12).
+   - **Real terminal.** Open it and set it up as in "Before launch: the CardCom terminal": no CVV requirement, Low Profile + Tokens + Documents modules, "always report the transaction" off, ask whether it's a standing-order terminal; run tests 14 and 15 on it; then replace `CARDCOM_API_NAME` / `CARDCOM_TERMINAL_NUMBER`.
+   - **VAT.** Recheck the exempt-dealer status; the prices are final amounts with no VAT.
 6. **Launch on Cloudflare.** Buy the domain, move hosting from Vercel to Cloudflare Pages, connect the domain, delete `netlify.toml` / `vercel.json`. *Done.*
 7. **Calendar sync.** First a private ICS subscription link per user (works with Google, Apple, Outlook; read-only, refreshed by the calendar app). Later, if needed, two-way Google / Outlook sync via OAuth, with tokens stored in Supabase and a scheduled edge function. Both run in Supabase, not on the host. *ICS link: code done: apply `…_calendar_feed.sql`, deploy `calendar-feed`, optionally set `APP_URL`.*
 
