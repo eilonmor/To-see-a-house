@@ -73,9 +73,9 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
    in order (`…_init.sql`, `…_accounts.sql`, `…_phone_10_digits.sql`, `…_guest_otp.sql`,
    `…_agencies.sql`, `…_calendar_feed.sql`, `…_booking_notes.sql`, `…_payments.sql`),
    or with the Supabase CLI.
-   Apply `…_payments.sql` together with the payment functions (step 11): from then
-   on, agents and agencies can't add properties or accept agents without a
-   subscription. It is safe to run again after it changes.
+   Hold back `…_payments.sql` until the payment functions are deployed (step 11),
+   and apply it last: from then on, agents and agencies can't add properties or
+   accept agents without a subscription. It is safe to run again after it changes.
    Hold back `…_revoke_guest_anon.sql` until the edge functions (step 8) and the new
    frontend are live: it cuts off the browser's direct access to the booking functions.
    `db push` applies every pending file, including that one, so on an existing
@@ -134,8 +134,10 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
     npx supabase secrets set APP_URL=https://your-domain.com
     npx supabase functions deploy calendar-feed
     ```
-11. **Set up payments (CardCom).** Apply `…_payments.sql` (step 2), set the
-    CardCom secrets, then deploy the payment functions. For development use
+11. **Set up payments (CardCom).** Set the CardCom secrets and deploy the payment
+    functions first, then apply `…_payments.sql` **last**. The migration turns on
+    the subscription requirement, so applied first it would block agents and
+    agencies before anyone can pay. Then deploy the frontend. For development use
     CardCom's test terminal (`CardTest1994` / `1000`); before launch, replace it
     with the real one (see "Before launch: the CardCom terminal" in
     [docs/cardcom-integration.md](docs/cardcom-integration.md)).
