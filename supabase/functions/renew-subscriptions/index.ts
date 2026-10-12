@@ -166,14 +166,15 @@ async function renewOne(subscriptionId: string, summary: Summary): Promise<void>
     }
     if (done.refund) {
       summary.refunds++
-      console.error('[cardcom] renewal charged after the subscription ended, refund it', paymentId, subscriptionId)
+      console.error('[cardcom] renewal charged after the subscription ended or was stopped, refund it', paymentId, subscriptionId)
       return
     }
     if (paid) {
       summary.charged++
     } else {
       summary.failed++
-      // With `refund` (false) in the result, the subscription had ended before.
+      // With `refund` (false) in the result, the subscription had ended (or
+      // was set to end) before.
       if (done.status === 'canceled' && done.refund === undefined) summary.ended++
     }
   }

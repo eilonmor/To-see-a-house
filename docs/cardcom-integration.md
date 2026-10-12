@@ -569,9 +569,11 @@ charged must still get its payment finished). For each:
    transaction, returns `{ status }` (the subscription's new status),
    `{ already_done: true }` if the payment was finished before, or
    `{ status, refund: true }` if the card was charged but the subscription had
-   ended meanwhile (a late payment: re-sent, or finished by hand): the payment is `paid`
-   with `refund_reason = 'late_renewal'`, the subscription untouched; `console.error`
-   it for a manual refund.
+   ended meanwhile (a late payment: re-sent, or finished by hand) or is set to end
+   (`cancel_at_period_end`: its owner joined or bought an agency while it was being
+   charged): the payment is `paid` with `refund_reason = 'late_renewal'`, the
+   subscription untouched; `console.error` it for a manual refund. Not paid, such a
+   payment is `failed` without counting toward `failed_renewals`.
    - paid (`ResponseCode` = 0): payment `paid`; subscription `active`,
      `failed_renewals = 0`, `current_period_start` = the old end,
      `current_period_end += 1 month / 1 year` (from the old end, not from today).

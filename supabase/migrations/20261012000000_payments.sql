@@ -775,9 +775,12 @@ $$;
 -- { status } (the subscription's new status), { already_done: true } if the
 -- payment was finished before, or { status, refund: true } when the card was
 -- charged but the subscription had ended meanwhile (only possible for a late
--- payment: re-sent by start_renewal, or finished by hand): the payment is paid
--- with refund_reason 'late_renewal', the subscription untouched, and the money
--- must be refunded in CardCom's dashboard.
+-- payment: re-sent by start_renewal, or finished by hand) or is set to end
+-- (its owner joined an agency, or bought one, while it was being charged):
+-- the payment is paid with refund_reason 'late_renewal', the subscription
+-- untouched, and the money must be refunded in CardCom's dashboard. Not paid,
+-- such a payment fails without counting as a failed renewal; one set to end
+-- is then ended by expire_subscriptions.
 drop function if exists public.finish_renewal(uuid, boolean, bigint);
 create function public.finish_renewal(p_payment_id uuid, p_paid boolean, p_tranzaction_id bigint)
 returns jsonb
@@ -796,7 +799,9 @@ begin
   end if;
 
   select * into sub from public.subscriptions where id = pay.subscription_id for update;
-  if sub.status not in ('active', 'past_due') then
+  -- The owner can't stop the renewal while it's charged (set_subscription_renewal),
+  -- but joining or buying an agency does.
+  if sub.status not in ('active', 'past_due') or sub.cancel_at_period_end then
     update public.payments
     set status = case when p_paid then 'paid' else 'failed' end,
         paid_at = case when p_paid then now() end,
