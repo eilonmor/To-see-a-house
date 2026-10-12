@@ -51,6 +51,9 @@ const longDate = (iso: string, lang: Lang) =>
 const isChargeIssue = (err: unknown) =>
   err instanceof BookingError && ['paymentUnconfirmed', 'upgradeRefundDue', 'upgradeInProgress'].includes(err.code)
 
+/** Its period has ended but it's still running: past due, or waiting for the daily renewal run. */
+const periodOver = (sub: Subscription) => sub.status === 'past_due' || Date.parse(sub.currentPeriodEnd) <= Date.now()
+
 const planName = (plans: Plan[], code: string, lang: Lang) => plans.find((p) => p.code === code)?.name[lang] ?? code
 
 /**
@@ -241,11 +244,11 @@ function SubscriptionCard({
           {formatPrice(sub.price, lang)} {t.billing.perPeriod[sub.period]}
         </p>
       </div>
-      {sub.status === 'past_due' && <Alert>{t.billing.pastDue}</Alert>}
+      {sub.status === 'past_due' && !sub.cancelAtPeriodEnd && <Alert>{t.billing.pastDue}</Alert>}
       <p className="text-sm text-slate-600">
         {sub.cancelAtPeriodEnd
-          ? sub.status === 'past_due'
-            ? t.billing.cancelRenewalPastDue
+          ? periodOver(sub)
+            ? t.billing.endsSoon
             : t.billing.endsOn(end)
           : t.billing.nextCharge(end, formatPrice(nextPrice, lang))}
       </p>
@@ -279,18 +282,22 @@ function RenewalControl({
   const [error, setError] = useState<unknown>(null)
   const end = longDate(sub.currentPeriodEnd, lang)
 
-  // A past-due plan's period has already ended: it's being retried.
-  const pastDue = sub.status === 'past_due'
+  // The period has ended: the plan ends (or is charged) at the next renewal run.
+  const over = periodOver(sub)
 
   async function change(renew: boolean) {
     const ok = renew
-      ? await confirm(pastDue ? t.billing.resumeRenewalPastDue : t.billing.resumeRenewalConfirm(end), {
+      ? await confirm(over ? t.billing.resumeRenewalSoon : t.billing.resumeRenewalConfirm(end), {
           confirmLabel: t.billing.resumeRenewal,
         })
-      : await confirm(pastDue ? t.billing.cancelRenewalPastDue : t.billing.cancelRenewalConfirm(end), {
-          tone: 'danger',
-          confirmLabel: t.billing.cancelRenewal,
-        })
+      : await confirm(
+          [
+            over ? t.billing.endsSoon : t.billing.cancelRenewalConfirm(end),
+            // The agency's agents are covered by this plan.
+            sub.orgId ? t.billing.cancelRenewalAgency : '',
+          ].join(' '),
+          { tone: 'danger', confirmLabel: t.billing.cancelRenewal },
+        )
     if (!ok) return
     setBusy(true)
     onStart()

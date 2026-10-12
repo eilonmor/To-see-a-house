@@ -897,11 +897,20 @@ begin
       and (p.role <> 'agency_admin'
            or public.payer_subscription_status(null, p.org_id) in ('active', 'past_due'))
   ) then
-    raise exception 'plan_not_allowed';
+    raise exception 'covered_by_agency';
   end if;
-  -- An upgrade being charged needs the renewal on (complete_upgrade checks it).
   if not p_renew then
+    -- An upgrade being charged needs the renewal on (complete_upgrade checks it).
     perform public.assert_no_pending_upgrade(sub.id);
+    -- A renewal being charged (or re-sent, for up to 3 days) is finished by
+    -- start_renewal whatever this flag says: stopping now would still be
+    -- charged for a whole new period, against what the user was told.
+    if exists (
+      select 1 from public.payments
+      where subscription_id = sub.id and kind = 'renewal' and status = 'pending'
+    ) then
+      raise exception 'renewal_in_progress';
+    end if;
   end if;
   update public.subscriptions set cancel_at_period_end = not p_renew where id = sub.id;
 end

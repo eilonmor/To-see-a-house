@@ -721,10 +721,13 @@ The billing page has a **Cancel renewal** button (with `ConfirmDialog`): it call
 the payer's own user, or the agency admin; else `subscription_not_found`), which
 sets `cancel_at_period_end = true`. The subscription stays active until
 `current_period_end`, then Task 5 ends it. Until then a **Resume renewal** button
-calls it with `true`. An agency member can't resume their own subscription (it
-was stopped when they joined): `plan_not_allowed`. No CardCom call is needed: the
-token simply isn't charged again. While an upgrade of it is being charged (or
-unconfirmed), stopping it raises `upgrade_in_progress` (Task 6.2).
+calls it with `true`. An own subscription the agency covers can't be resumed
+(an agent's was stopped when they joined, an admin's when the agency's plan was
+bought): `covered_by_agency`. An admin whose agency has no plan yet may resume
+their own. No CardCom call is needed: the token simply isn't charged again.
+While an upgrade of it is being charged (or unconfirmed), stopping it raises
+`upgrade_in_progress` (Task 6.2); while a renewal of it is being charged (or
+re-sent, Task 5), `renewal_in_progress`, since that charge would still renew it.
 
 ## Task 8: Docs and checks
 
