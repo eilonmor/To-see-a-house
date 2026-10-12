@@ -130,9 +130,10 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
     - Method `POST` to `https://<project-ref>.supabase.co/functions/v1/renew-subscriptions`.
     - Header `x-cron-secret: <CRON_SECRET>`; no body needed.
 
-    The function answers 401 without the right header, and returns a summary
-    (charged, failed, ended, …) that also goes to **Edge Functions →
-    renew-subscriptions → Logs**.
+    The function answers 401 without the right header. Otherwise it answers 202
+    right away (so Cron's short HTTP timeout doesn't matter) and keeps charging in
+    the background; the summary (charged, failed, ended, …) is in **Edge Functions
+    → renew-subscriptions → Logs** as `[renew] done`.
 
 #### SMS limits
 
