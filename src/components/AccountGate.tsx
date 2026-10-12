@@ -97,6 +97,7 @@ function AccountBar({ user, profile }: { user: User; profile: Profile }) {
     { href: '/dashboard', label: t.nav.myProperties },
     { href: '/dashboard/agency', label: t.agency.nav },
     { href: '/dashboard/calendar', label: t.calendar.nav },
+    { href: '/dashboard/billing', label: t.billing.nav },
   ]
 
   async function logout() {

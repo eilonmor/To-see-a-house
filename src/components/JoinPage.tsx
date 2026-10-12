@@ -57,7 +57,11 @@ function JoinPage({ code }: { code: string }) {
     try {
       await acceptInvite(code)
     } catch (err) {
-      setError(`${t.join.joinError} ${errorText(err, t)}`)
+      // Only the agency's admin can fix these, from their billing page.
+      const code = err instanceof BookingError ? err.code : ''
+      if (code === 'subscriptionRequired') setError(t.join.noSubscription)
+      else if (code === 'agencySeatLimit') setError(t.join.noSeats)
+      else setError(`${t.join.joinError} ${errorText(err, t)}`)
       setBusy(false)
       return
     }
