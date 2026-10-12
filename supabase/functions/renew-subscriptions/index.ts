@@ -10,7 +10,8 @@
 // See docs/cardcom-integration.md, Task 5.
 
 import { cardcomCharge } from '../_shared/cardcom.ts'
-import { admin, rpc } from '../_shared/db.ts'
+import { CARD_COLUMNS, payerOf, responseFields, tokenChargeBody, type ChargeBody } from '../_shared/charge.ts'
+import { admin, must, rpc } from '../_shared/db.ts'
 
 // Supabase's edge runtime: keeps the function running after the response.
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
@@ -52,51 +53,6 @@ async function sameSecret(a: string, b: string): Promise<boolean> {
   let diff = 0
   for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i]
   return diff === 0
-}
-
-function must<T>(res: { data: T | null; error: { code?: string; message: string } | null }, what: string): T {
-  if (res.error || res.data === null) throw new Error(`${what}: ${res.error?.code ?? ''} ${res.error?.message ?? 'not found'}`)
-  return res.data
-}
-
-async function emailOf(userId: string): Promise<string> {
-  const { data, error } = await admin.auth.admin.getUserById(userId)
-  if (error) throw new Error(`auth user ${userId}: ${error.message}`)
-  return data.user?.email ?? ''
-}
-
-/**
- * Who the charge and the document are for. A user pays for themselves; an
- * agency's card owner and email are its (oldest) agency admin's, and the
- * document is in the agency's name, as at checkout.
- */
-async function payerOf(sub: { user_id: string | null; org_id: string | null }) {
-  if (sub.user_id) {
-    const profile = must(await admin.from('profiles').select('full_name').eq('id', sub.user_id).single(), 'profiles')
-    const fullName = profile.full_name.trim()
-    return { fullName, email: await emailOf(sub.user_id), documentName: fullName }
-  }
-  const [orgRes, adminRes] = await Promise.all([
-    admin.from('organizations').select('name').eq('id', sub.org_id!).single(),
-    admin
-      .from('profiles')
-      .select('id, full_name')
-      .eq('org_id', sub.org_id!)
-      .eq('role', 'agency_admin')
-      .order('created_at')
-      .limit(1)
-      .maybeSingle(),
-  ])
-  const org = must(orgRes, 'organizations')
-  const orgAdmin = must(adminRes, 'agency admin')
-  const fullName = orgAdmin.full_name.trim()
-  return { fullName, email: await emailOf(orgAdmin.id), documentName: org.name.trim() || fullName }
-}
-
-/** Month zero-padded + the last 2 digits of the year (CardYear may be 28 or 2028), or null. */
-function expirationMMYY(month: number | null, year: number | null): string | null {
-  if (!Number.isInteger(month) || !Number.isInteger(year) || month! < 1 || month! > 12) return null
-  return String(month).padStart(2, '0') + String(year! % 100).padStart(2, '0')
 }
 
 /** Expires the stopped subscriptions, then renews the due ones. Never throws. */
@@ -200,69 +156,27 @@ async function renewOne(subscriptionId: string, summary: Summary): Promise<void>
     await finish(false, null)
   }
 
-  let body: Parameters<typeof cardcomCharge>[0]
+  let body: ChargeBody | null
   try {
     const sub = must(
-      await admin
-        .from('subscriptions')
-        .select(
-          'user_id, org_id, cardcom_token, cardcom_token_card_month, cardcom_token_card_year, cardcom_token_card_owner_identity_number',
-        )
-        .eq('id', subscriptionId)
-        .single(),
+      await admin.from('subscriptions').select(`user_id, org_id, ${CARD_COLUMNS}`).eq('id', subscriptionId).single(),
       'subscriptions',
     )
-
-    const token = sub.cardcom_token?.trim()
-    const mmyy = expirationMMYY(sub.cardcom_token_card_month, sub.cardcom_token_card_year)
-    if (!token || !mmyy) return await notSent('no saved card token or expiration date')
-
     const [payer, planRes] = await Promise.all([
       payerOf(sub),
       admin.from('plans').select('name_he').eq('code', start.plan_code).single(),
     ])
     const plan = must(planRes, 'plans')
-    const amount = Math.round(Number(start.amount) * 100) / 100
-    const documentName = payer.documentName || payer.email
-
-    body = {
-      Amount: amount,
-      Token: token,
-      CardExpirationMMYY: mmyy,
-      ExternalUniqTranId: paymentId,
-      NumOfPayments: 1,
-      ISOCoinId: 1,
-      CardOwnerInformation: {
-        FullName: payer.fullName || documentName,
-        IdentityNumber: sub.cardcom_token_card_owner_identity_number?.trim() || undefined,
-        CardOwnerEmail: payer.email,
-      },
-      Document: {
-        DocumentTypeToCreate: 'Auto',
-        Name: documentName,
-        Email: payer.email,
-        IsSendByEmail: true,
-        Language: 'he',
-        Products: [{ Description: plan.name_he, UnitCost: amount, Quantity: 1 }],
-      },
-    }
+    body = tokenChargeBody({ paymentId, amount: Number(start.amount), card: sub, payer, product: plan.name_he, lang: 'he' })
   } catch (err) {
     return await notSent(err instanceof Error ? err.message : String(err))
   }
+  if (!body) return await notSent('no saved card token or expiration date')
 
   const { outcome, response } = await cardcomCharge(body)
 
   if (response) {
-    const saved = await admin
-      .from('payments')
-      .update({
-        cardcom_response_code: typeof response.ResponseCode === 'number' ? response.ResponseCode : null,
-        cardcom_description: response.Description ?? null,
-        cardcom_document_type: response.DocumentType ?? null,
-        cardcom_document_number: response.DocumentNumber ?? null,
-      })
-      .eq('id', paymentId)
-      .eq('status', 'pending')
+    const saved = await admin.from('payments').update(responseFields(response)).eq('id', paymentId).eq('status', 'pending')
     if (saved.error) console.error('[cardcom] could not save the response', paymentId, saved.error.message)
   }
 

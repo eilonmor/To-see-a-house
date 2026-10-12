@@ -104,6 +104,10 @@ create table if not exists public.payments (
 create index if not exists payments_subscription_id_idx on public.payments (subscription_id);
 create index if not exists payments_user_id_idx on public.payments (user_id);
 create index if not exists payments_org_id_idx on public.payments (org_id);
+-- One upgrade charge at a time per subscription: a second request (two tabs)
+-- can't be charged while the first is pending or unconfirmed.
+create unique index if not exists payments_one_pending_upgrade_idx
+  on public.payments (subscription_id) where kind = 'upgrade' and status = 'pending';
 
 -- ===========================================================================
 -- Row Level Security

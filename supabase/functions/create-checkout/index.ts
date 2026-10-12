@@ -7,24 +7,16 @@
 // CardCom ones (see _shared/cardcom.ts).
 
 import { cardcomPost } from '../_shared/cardcom.ts'
-import { admin, rpc } from '../_shared/db.ts'
+import { admin, must, rpc, sessionUser } from '../_shared/db.ts'
 import { ApiError, handler, str } from '../_shared/http.ts'
 
 type CreateResult = { ResponseCode?: number | null; Description?: string | null; LowProfileId?: string | null; Url?: string | null }
 
 const OPERATION = 'ChargeAndCreateToken'
 
-function must<T>(res: { data: T | null; error: { code?: string; message: string } | null }, what: string): T {
-  if (res.error || res.data === null) throw new Error(`${what}: ${res.error?.code ?? ''} ${res.error?.message ?? 'not found'}`)
-  return res.data
-}
-
 Deno.serve(
   handler(async (body, req) => {
-    const jwt = req.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') ?? ''
-    const { data: auth } = jwt ? await admin.auth.getUser(jwt) : { data: { user: null } }
-    const user = auth.user
-    if (!user) throw new ApiError('not_authenticated', 401)
+    const user = await sessionUser(req)
 
     const plan = str(body.plan)
     const lang = str(body.lang)

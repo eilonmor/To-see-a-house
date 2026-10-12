@@ -319,6 +319,22 @@ const he = {
     failed: 'התשלום לא עבר. אפשר לנסות שוב, עם אותו כרטיס או עם כרטיס אחר.',
     stillConfirming: 'עדיין לא קיבלנו אישור לתשלום. רעננו את הדף בעוד כמה דקות. אם חויבתם והמנוי לא פעיל, צרו קשר.',
     choosePlan: 'לבחירת מנוי',
+    moveToAgency: 'מעבר למנוי סוכנות',
+    moveToAgencyHelp: 'המנוי שלך יעבור לסוכנות, עם אותו כרטיס שמור ואותו מועד חידוש.',
+    agencySeats: (n: number) => `עד ${n} מתווכים`,
+    upgradeSeats: (n: number) => `שדרוג ל-${n} מתווכים`,
+    upgradeConfirm: (amount: string, date: string, price: string, per: string) =>
+      `${amount} יחויבו עכשיו בכרטיס השמור, עבור יתרת התקופה הנוכחית. החל מ-${date}: ${price} ${per}.`,
+    upgradeFree: (date: string, price: string, per: string) =>
+      `המנוי ישתנה עכשיו, ללא חיוב על יתרת התקופה הנוכחית. החל מ-${date}: ${price} ${per}.`,
+    upgradeConfirmLabel: 'לשדרוג',
+    upgraded: 'המנוי עודכן.',
+    downgradeSeats: (n: number) => `מעבר ל-${n} מתווכים בחידוש הבא`,
+    downgradeConfirm: (n: number, date: string, price: string, per: string) =>
+      `החל מ-${date} המנוי יכלול ${n} מתווכים ויעלה ${price} ${per}. עד אז שום דבר לא משתנה.`,
+    downgradeScheduled: (n: number, date: string) => `ב-${date} המנוי יעבור ל-${n} מתווכים.`,
+    keepSeats: (n: number) => `להישאר עם ${n} מתווכים`,
+    changeError: 'לא ניתן לשנות את המנוי:',
   },
   properties: {
     title: 'הדירות שלי',
@@ -810,6 +826,22 @@ const en: Translation = {
     stillConfirming:
       "We haven't received the payment confirmation yet. Refresh the page in a few minutes. If you were charged and the plan isn't active, contact us.",
     choosePlan: 'Choose a plan',
+    moveToAgency: 'Move to an agency plan',
+    moveToAgencyHelp: 'Your plan moves to the agency, with the same saved card and the same renewal date.',
+    agencySeats: (n: number) => `Up to ${n} agents`,
+    upgradeSeats: (n: number) => `Upgrade to ${n} agents`,
+    upgradeConfirm: (amount: string, date: string, price: string, per: string) =>
+      `${amount} will be charged now to your saved card for the rest of this period. From ${date}: ${price} ${per}.`,
+    upgradeFree: (date: string, price: string, per: string) =>
+      `The plan changes now, with no charge for the rest of this period. From ${date}: ${price} ${per}.`,
+    upgradeConfirmLabel: 'Upgrade',
+    upgraded: 'Your plan was changed.',
+    downgradeSeats: (n: number) => `Switch to ${n} agents at the next renewal`,
+    downgradeConfirm: (n: number, date: string, price: string, per: string) =>
+      `From ${date}, the plan will include ${n} agents and cost ${price} ${per}. Until then nothing changes.`,
+    downgradeScheduled: (n: number, date: string) => `On ${date} the plan switches to ${n} agents.`,
+    keepSeats: (n: number) => `Keep ${n} agents`,
+    changeError: 'Could not change the plan:',
   },
   properties: {
     title: 'My properties',

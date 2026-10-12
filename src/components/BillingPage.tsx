@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { CONTACT_EMAIL } from '../config'
 import {
   fetchMyPayments,
   fetchMySubscription,
   fetchPlans,
+  quotePlanChange,
+  scheduleDowngrade,
   startCheckout,
+  upgradePlan,
   type MySubscriptions,
   type Payment,
   type Period,
@@ -17,6 +20,7 @@ import { usePolledData } from '../hooks/usePolledData'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import type { Lang } from '../i18n/translations'
 import { useAccount } from './AccountGate'
+import { useConfirm } from './ConfirmDialog'
 import { Alert, Button, Card, Loading, Spinner } from './ui'
 
 type Billing = { plans: Plan[]; subs: MySubscriptions; payments: Payment[] }
@@ -72,6 +76,14 @@ export default function BillingPage() {
     reloadProfile().catch(() => {})
   }, [refresh, reloadProfile])
 
+  // Shown here, not in the card: moving to an agency plan replaces the card.
+  const [upgraded, setUpgraded] = useState(false)
+  const onUpgraded = useCallback(() => {
+    setUpgraded(true)
+    onConfirmed()
+  }, [onConfirmed])
+  const onPlanAction = useCallback(() => setUpgraded(false), [])
+
   // Which plans the user may buy (the database checks this again):
   // agency plans for an agency admin, agent plans outside an agency.
   const audience = profile.role === 'agency_admin' ? 'agency' : profile.orgId ? null : 'agent'
@@ -82,6 +94,7 @@ export default function BillingPage() {
 
       {result === 'success' && <CheckoutResult userId={user.id} onConfirmed={onConfirmed} />}
       {result === 'failed' && <Alert>{t.billing.failed}</Alert>}
+      {upgraded && <Alert tone="info">{t.billing.upgraded}</Alert>}
 
       {error != null && (
         <Alert>
@@ -98,8 +111,19 @@ export default function BillingPage() {
         loading && <Loading label={t.dashboard.loading} />
       ) : (
         <>
-          {data.subs.agency && <SubscriptionCard title={t.billing.agencyTitle} sub={data.subs.agency} plans={data.plans} />}
-          {data.subs.own && <SubscriptionCard title={t.billing.ownTitle} sub={data.subs.own} plans={data.plans} />}
+          {data.subs.agency && (
+            <SubscriptionCard title={t.billing.agencyTitle} sub={data.subs.agency} plans={data.plans}>
+              <PlanChange sub={data.subs.agency} plans={data.plans} onStart={onPlanAction} onUpgraded={onUpgraded} onChanged={refresh} />
+            </SubscriptionCard>
+          )}
+          {data.subs.own && (
+            <SubscriptionCard title={t.billing.ownTitle} sub={data.subs.own} plans={data.plans}>
+              {/* An agency admin's own agent plan, from before the agency, can move to it. */}
+              {profile.role === 'agency_admin' && !data.subs.agency && (
+                <PlanChange sub={data.subs.own} plans={data.plans} onStart={onPlanAction} onUpgraded={onUpgraded} onChanged={refresh} />
+              )}
+            </SubscriptionCard>
+          )}
           {audience === null && <Alert tone="info">{t.billing.covered}</Alert>}
           {audience && !data.subs[audience === 'agency' ? 'agency' : 'own'] && (
             <PlanPicker audience={audience} plans={data.plans.filter((p) => p.audience === audience)} />
@@ -168,11 +192,22 @@ function CheckoutResult({ userId, onConfirmed }: { userId: string; onConfirmed: 
   )
 }
 
-function SubscriptionCard({ title, sub, plans }: { title: string; sub: Subscription; plans: Plan[] }) {
+function SubscriptionCard({
+  title,
+  sub,
+  plans,
+  children,
+}: {
+  title: string
+  sub: Subscription
+  plans: Plan[]
+  children?: ReactNode
+}) {
   const { t, lang } = useI18n()
   const end = longDate(sub.currentPeriodEnd, lang)
   // A downgrade scheduled for the renewal is charged at that plan's price.
-  const nextPrice = (sub.nextPlanCode && plans.find((p) => p.code === sub.nextPlanCode)?.price) || sub.price
+  const nextPlan = sub.nextPlanCode ? plans.find((p) => p.code === sub.nextPlanCode) : undefined
+  const nextPrice = nextPlan?.price || sub.price
 
   return (
     <Card className="space-y-3">
@@ -196,8 +231,139 @@ function SubscriptionCard({ title, sub, plans }: { title: string; sub: Subscript
       <p className="text-sm text-slate-600">
         {sub.cancelAtPeriodEnd ? t.billing.endsOn(end) : t.billing.nextCharge(end, formatPrice(nextPrice, lang))}
       </p>
-      {/* Plan changes (Task 6) and stopping / resuming the renewal (Task 7) go here. */}
+      {nextPlan?.agentSeats && !sub.cancelAtPeriodEnd && (
+        <p className="text-sm text-slate-600">{t.billing.downgradeScheduled(nextPlan.agentSeats, end)}</p>
+      )}
+      {children}
+      {/* Stopping / resuming the renewal (Task 7) goes here. */}
     </Card>
+  )
+}
+
+/**
+ * Plan changes, for an active subscription that isn't cancelling (the
+ * database checks this again): an agent plan moves to an agency plan, and an
+ * agency plan moves up (charged now, prorated) or down (at the next renewal)
+ * a seat tier, in the same period. CardCom is called only by the change-plan
+ * edge function.
+ */
+function PlanChange({
+  sub,
+  plans,
+  onStart,
+  onUpgraded,
+  onChanged,
+}: {
+  sub: Subscription
+  plans: Plan[]
+  /** A plan action starts: an earlier "plan changed" notice no longer applies. */
+  onStart: () => void
+  onUpgraded: () => void
+  onChanged: () => void
+}) {
+  const { t, lang } = useI18n()
+  const confirm = useConfirm()
+  // The plan being changed to (or the current plan, while keeping it).
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<unknown>(null)
+
+  const current = plans.find((p) => p.code === sub.planCode)
+  if (sub.status !== 'active' || sub.cancelAtPeriodEnd || !current) return null
+
+  const end = longDate(sub.currentPeriodEnd, lang)
+  const agencyPlans = plans
+    .filter((p) => p.audience === 'agency' && p.period === sub.period && p.agentSeats)
+    .sort((a, b) => a.agentSeats! - b.agentSeats!)
+  const seats = current.agentSeats ?? 0
+  const upgrades = current.audience === 'agent' ? agencyPlans : agencyPlans.filter((p) => p.agentSeats! > seats)
+  const downgrades = current.audience === 'agency' ? agencyPlans.filter((p) => p.agentSeats! < seats) : []
+
+  async function act(code: string, action: () => Promise<void>) {
+    setBusy(code)
+    onStart()
+    setError(null)
+    try {
+      await action()
+    } catch (err) {
+      setError(err)
+      // The charge may have gone through: the history shows the pending payment.
+      if (err instanceof BookingError && err.code === 'paymentUnconfirmed') onChanged()
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const upgrade = (plan: Plan) =>
+    act(plan.code, async () => {
+      const quote = await quotePlanChange(plan.code)
+      if (quote.change !== 'upgrade') throw new BookingError('planChangeNotAllowed')
+      const price = formatPrice(plan.price, lang)
+      const per = t.billing.perPeriod[plan.period]
+      const message =
+        quote.amount > 0
+          ? t.billing.upgradeConfirm(formatPrice(quote.amount, lang), end, price, per)
+          : t.billing.upgradeFree(end, price, per)
+      if (!(await confirm(message, { confirmLabel: t.billing.upgradeConfirmLabel }))) return
+      await upgradePlan(plan.code, lang)
+      onUpgraded()
+    })
+
+  const downgrade = (plan: Plan) =>
+    act(plan.code, async () => {
+      const message = t.billing.downgradeConfirm(plan.agentSeats!, end, formatPrice(plan.price, lang), t.billing.perPeriod[plan.period])
+      if (!(await confirm(message))) return
+      await scheduleDowngrade(plan.code)
+      onChanged()
+    })
+
+  // Scheduling the current plan cancels the scheduled downgrade.
+  const keep = () =>
+    act(current.code, async () => {
+      await scheduleDowngrade(current.code)
+      onChanged()
+    })
+
+  if (!upgrades.length && !downgrades.length) return null
+
+  return (
+    <div className="space-y-3 border-t border-slate-100 pt-3">
+      {current.audience === 'agent' && (
+        <div>
+          <h3 className="font-semibold text-slate-900">{t.billing.moveToAgency}</h3>
+          <p className="mt-1 text-sm text-slate-500">{t.billing.moveToAgencyHelp}</p>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {upgrades.map((plan) => (
+          <Button key={plan.code} onClick={() => upgrade(plan)} disabled={busy !== null}>
+            {busy === plan.code && <Spinner />}{' '}
+            {current.audience === 'agent' ? t.billing.agencySeats(plan.agentSeats!) : t.billing.upgradeSeats(plan.agentSeats!)}
+          </Button>
+        ))}
+        {sub.nextPlanCode ? (
+          <Button variant="secondary" onClick={keep} disabled={busy !== null}>
+            {busy === current.code && <Spinner />} {t.billing.keepSeats(seats)}
+          </Button>
+        ) : (
+          downgrades.map((plan) => (
+            <Button key={plan.code} variant="secondary" onClick={() => downgrade(plan)} disabled={busy !== null}>
+              {busy === plan.code && <Spinner />} {t.billing.downgradeSeats(plan.agentSeats!)}
+            </Button>
+          ))
+        )}
+      </div>
+      {error != null && (
+        <Alert>
+          {t.billing.changeError} {errorText(error, t)}
+          {error instanceof BookingError && error.code === 'paymentUnconfirmed' && (
+            <>
+              {' '}
+              <ContactLink />
+            </>
+          )}
+        </Alert>
+      )}
+    </div>
   )
 }
 
