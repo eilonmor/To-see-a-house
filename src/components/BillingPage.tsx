@@ -6,6 +6,7 @@ import {
   fetchPlans,
   quotePlanChange,
   scheduleDowngrade,
+  setRenewal,
   startCheckout,
   upgradePlan,
   type MySubscriptions,
@@ -118,6 +119,7 @@ export default function BillingPage() {
           {data.subs.agency && (
             <SubscriptionCard title={t.billing.agencyTitle} sub={data.subs.agency} plans={data.plans}>
               <PlanChange sub={data.subs.agency} plans={data.plans} onStart={onPlanAction} onUpgraded={onUpgraded} onChanged={refresh} />
+              <RenewalControl sub={data.subs.agency} coveredByAgency={false} onStart={onPlanAction} onChanged={refresh} />
             </SubscriptionCard>
           )}
           {data.subs.own && (
@@ -126,6 +128,12 @@ export default function BillingPage() {
               {profile.role === 'agency_admin' && !data.subs.agency && (
                 <PlanChange sub={data.subs.own} plans={data.plans} onStart={onPlanAction} onUpgraded={onUpgraded} onChanged={refresh} />
               )}
+              <RenewalControl
+                sub={data.subs.own}
+                coveredByAgency={profile.role === 'agent' ? !!profile.orgId : !!data.subs.agency}
+                onStart={onPlanAction}
+                onChanged={refresh}
+              />
             </SubscriptionCard>
           )}
           {audience === null && <Alert tone="info">{t.billing.covered}</Alert>}
@@ -235,14 +243,89 @@ function SubscriptionCard({
       </div>
       {sub.status === 'past_due' && <Alert>{t.billing.pastDue}</Alert>}
       <p className="text-sm text-slate-600">
-        {sub.cancelAtPeriodEnd ? t.billing.endsOn(end) : t.billing.nextCharge(end, formatPrice(nextPrice, lang))}
+        {sub.cancelAtPeriodEnd
+          ? sub.status === 'past_due'
+            ? t.billing.cancelRenewalPastDue
+            : t.billing.endsOn(end)
+          : t.billing.nextCharge(end, formatPrice(nextPrice, lang))}
       </p>
       {nextPlan?.agentSeats && !sub.cancelAtPeriodEnd && (
         <p className="text-sm text-slate-600">{t.billing.downgradeScheduled(nextPlan.agentSeats, end)}</p>
       )}
       {children}
-      {/* Stopping / resuming the renewal (Task 7) goes here. */}
     </Card>
+  )
+}
+
+/**
+ * Stops the automatic renewal (the plan stays until the end of its period)
+ * or resumes it. An own plan the agency covers can't be resumed (the
+ * database checks this again).
+ */
+function RenewalControl({
+  sub,
+  coveredByAgency,
+  onStart,
+  onChanged,
+}: {
+  sub: Subscription
+  coveredByAgency: boolean
+  onStart: () => void
+  onChanged: () => void
+}) {
+  const { t, lang } = useI18n()
+  const confirm = useConfirm()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  const end = longDate(sub.currentPeriodEnd, lang)
+
+  // A past-due plan's period has already ended: it's being retried.
+  const pastDue = sub.status === 'past_due'
+
+  async function change(renew: boolean) {
+    const ok = renew
+      ? await confirm(pastDue ? t.billing.resumeRenewalPastDue : t.billing.resumeRenewalConfirm(end), {
+          confirmLabel: t.billing.resumeRenewal,
+        })
+      : await confirm(pastDue ? t.billing.cancelRenewalPastDue : t.billing.cancelRenewalConfirm(end), {
+          tone: 'danger',
+          confirmLabel: t.billing.cancelRenewal,
+        })
+    if (!ok) return
+    setBusy(true)
+    onStart()
+    setError(null)
+    try {
+      await setRenewal(sub.id, renew)
+      onChanged()
+    } catch (err) {
+      setError(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (sub.cancelAtPeriodEnd && coveredByAgency) {
+    return <p className="text-sm text-slate-500">{t.billing.coveredByAgency}</p>
+  }
+
+  return (
+    <div className="space-y-3 border-t border-slate-100 pt-3">
+      {sub.cancelAtPeriodEnd ? (
+        <Button variant="secondary" onClick={() => change(true)} disabled={busy}>
+          {busy && <Spinner />} {t.billing.resumeRenewal}
+        </Button>
+      ) : (
+        <Button variant="danger" onClick={() => change(false)} disabled={busy}>
+          {busy && <Spinner />} {t.billing.cancelRenewal}
+        </Button>
+      )}
+      {error != null && (
+        <Alert>
+          {t.billing.renewalError} {errorText(error, t)}
+        </Alert>
+      )}
+    </div>
   )
 }
 

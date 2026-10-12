@@ -411,6 +411,7 @@ export type Database = {
         Returns: { subscription_id: string; change: string; amount: number; new_org_id: string | null }[]
       }
       schedule_plan_change: { Args: { p_plan: string }; Returns: undefined }
+      set_subscription_renewal: { Args: { p_subscription_id: string; p_renew: boolean }; Returns: undefined }
     }
     Enums: {
       user_role: 'personal' | 'agent' | 'agency_admin'
