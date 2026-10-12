@@ -96,6 +96,7 @@ Deno.serve(
           IsAllowEditDocument: true,
           Name: documentName,
           Email: email,
+          IsSendByEmail: true,
           Mobile: phone,
           Language: lang,
           Products: [{ Description: lang === 'he' ? planRow.name_he : planRow.name_en, UnitCost: amount, Quantity: 1 }],

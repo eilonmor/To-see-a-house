@@ -9,6 +9,20 @@ Read `README.md`, `PLAN.md`, the migrations in `supabase/migrations/` and the
 functions in `supabase/functions/` before starting, and follow their conventions
 (see "Project conventions" below).
 
+## CardCom's documentation
+
+Check these when a CardCom field or behavior is in doubt (Hebrew and English mixed):
+
+- [Steps 1+2: create a payment page and get the deal result (Iframe / Redirect)](https://cardcomapi.zendesk.com/hc/he/articles/25264402497426):
+  `LowProfile/Create`, the webhook, `LowProfile/GetLpResult`.
+- [Step 3: charge a token / direct charge (Do Transaction)](https://cardcomapi.zendesk.com/hc/he/articles/25269208059282):
+  `Transactions/Transaction`, `ExternalUniqTranId`, error 608.
+
+The pages answer automated fetches with 403. Read them through Zendesk's API
+instead, which returns the article HTML as JSON:
+`https://cardcomapi.zendesk.com/api/v2/help_center/he/articles/<id>.json`
+(`25264402497426` or `25269208059282`).
+
 ## What we sell
 
 Monthly or yearly subscriptions that renew automatically. No VAT is charged (the
@@ -154,18 +168,26 @@ Edge function secrets (`npx supabase secrets set …`), never in `.env*`:
   name goes in the body. `cardcomPost` adds `TerminalNumber` and `ApiName` to every
   body itself, so the request bodies below show them only for completeness; callers
   never read the secrets.
-- **Charges are never retried**: `Transactions/Transaction` (renewals, upgrades)
-  calls `cardcomPost(path, body, { retry: false })`. A timed-out charge may have gone
-  through, and a retry with the same `ExternalUniqTranId` would be refused as a
-  duplicate and look like a decline. When a charge throws (timeout, network error,
-  non-200), its outcome is **unknown**: leave the payment `pending`, `console.error`
-  it, and check it in CardCom's dashboard. `LowProfile/Create` and `GetLpResult`
-  charge nothing and keep the retry.
+- **Charges go through `cardcomCharge(body)`** (same file), never `cardcomPost`
+  directly. It sends `Transactions/Transaction` with `ExternalUniqTranId` = the
+  payment id **and** `"ExternalUniqUniqTranIdResponse": true` (CardCom's spelling,
+  "Uniq" twice). With `true`, CardCom answers a repeated id with the **original
+  transaction's response** and doesn't charge again; with `false` (the default) it
+  answers error **608**. So the same payment can be sent again later: CardCom returns
+  the first attempt's result, or charges once if the first never arrived.
+  - 30-second timeout (a card authorization can take longer than 5), and **no
+    immediate retry**: the first attempt may still be in progress at CardCom, and a
+    duplicate of it could come back as 608.
+  - Returns `{ outcome: 'paid' | 'declined' | 'unknown', response }`. **Unknown**
+    (the request failed, or `ResponseCode` is 608 or missing): the card may or may
+    not have been charged. Leave the payment `pending`; it's sent again later
+    (renewals: Task 5; upgrades: Task 6, step 6). Never treat it as a decline.
 - In `supabase/config.toml` add `verify_jwt = false` for `payment-webhook`
   (CardCom has no Supabase session) and `renew-subscriptions` (checks
   `CRON_SECRET`). `create-checkout` and `change-plan` keep the default
   (`verify_jwt = true`).
-- Before launch, replace the test terminal with the real one.
+- Before launch, replace the test terminal with the real one (see "Before launch:
+  the CardCom terminal").
 
 ## Task 2: Database migration (`…_payments.sql`)
 
@@ -294,6 +316,14 @@ public HTTPS address, so CardCom can reach it during local development too (the
 frontend runs on localhost; the functions run on Supabase).
 
 1. The webhook is unauthenticated; `GetLpResult` is the validation.
+   - By default CardCom calls it **only for successful payments**. Declined ones
+     are reported only with "always report the transaction" ("תמיד בצע דיווח של
+     עסקה", CardCom settings → 4. Low profile clearing → 2. General settings):
+     **leave it off** (see "A declined card, then a retry on the same page"). A
+     declined checkout then stays `pending`, like an abandoned one; the billing
+     page hides old pending checkouts.
+   - If the answer isn't HTTP 200, CardCom sends it again up to 7 times, after
+     1, 2, 2, 16 and 60 minutes, then 12 and 12 hours. The count can't be changed.
 2. Body (ignore other fields):
    ```json
    { "ResponseCode": 0, "Description": "string", "TerminalNumber": 0, "LowProfileId": "string", "Operation": "string" }
@@ -320,7 +350,9 @@ frontend runs on localhost; the functions run on Supabase).
 8. `ResponseCode` = 0: `rpc('complete_checkout', { p_payment_id, p_tranzaction_id,
    p_token, p_token_expires_on, p_card_year, p_card_month, p_approval_number,
    p_owner_identity_number })`, one transaction (in the migration). Parse
-   `TokenExDate` (`yyyyMMdd`) to `yyyy-MM-dd` for `p_token_expires_on`. It:
+   `TokenExDate` (`yyyyMMdd`) to `yyyy-MM-dd` for `p_token_expires_on`. **Trim** the
+   token strings: CardCom pads some with spaces (`"040617649 "`, `"12345 "`), and
+   the ID number is sent back on every renewal. It:
    - marks the payment `paid`, with `paid_at` and `cardcom_tranzaction_id`;
    - creates the subscription (`active`, `price` = the payment's amount, `period`
      from the plan, `current_period_start` = now, `current_period_end` = now + 1
@@ -372,6 +404,7 @@ user from the `Authorization` header with `admin.auth.getUser(jwt)`).
        "IsAllowEditDocument": true,
        "Name": "<agency name for agency plans, else full_name; email if empty>",
        "Email": "<email>",
+       "IsSendByEmail": true,
        "Mobile": "<phone>",
        "Language": "he",
        "Products": [{ "Description": "<plan name in the document language>", "UnitCost": 23, "Quantity": 1 }]
@@ -382,8 +415,17 @@ user from the `Authorization` header with `admin.auth.getUser(jwt)`).
      sent by the browser as `{ plan, lang }` and checked against those two values.
    - `Amount` must equal the sum of `UnitCost × Quantity`. Both come from the same
      `plans.price`; round to 2 decimals.
-   - In local development `APP_URL` can be `http://localhost:5173`: the redirect is
-     done by the user's browser, so it reaches localhost.
+   - `IsSendByEmail: true`: CardCom emails the receipt to `Email`. Neither CardCom
+     article says what the default is, so send it explicitly (renewals and upgrades
+     too).
+   - Local development: CardCom's docs say the redirect URLs and `WebHookUrl` must
+     be **external addresses, not localhost**. The redirect is done by the user's
+     browser, so `APP_URL=http://localhost:5173` would work if CardCom accepts it;
+     if `LowProfile/Create` refuses it, use a Cloudflare Pages preview URL or a
+     tunnel. Check it on the test terminal.
+   - `CancelRedirectUrl` isn't in CardCom's field list for `LowProfile/Create`.
+     Check on the test terminal that it's accepted and used; if not, drop it (the
+     user goes back with the browser's Back button).
 5. Response: `{ ResponseCode, Description, LowProfileId, Url }`.
    - `ResponseCode` ≠ 0, or the request failed: `console.error('[cardcom] create failed', Description)`,
      mark the payment `failed`, throw `ApiError('checkout_unavailable', 502)`. The
@@ -450,21 +492,31 @@ once that payment is finished. Returns `{ expired, pending: [subscription ids] }
 
 Then select (service role) the ids of subscriptions with
 `status in ('active','past_due')`, `cancel_at_period_end = false` and
-`current_period_end <= now()`, and for each:
+`current_period_end <= now()`, **plus** the `subscription_id` of every `pending`
+renewal payment (whatever the subscription's state: one stopped while being
+charged must still get its payment finished). For each:
 
 1. `rpc('start_renewal', { p_subscription_id })` inserts the `pending` renewal
    payment and returns `{ payment_id, amount, plan_code }`. The amount is
    `subscriptions.price`, or, when a downgrade is scheduled (`next_plan_code`),
-   that plan's current price. Or it returns `{ skipped }` and the subscription is
-   left alone:
-   - `not_due`: renewed or canceled meanwhile;
-   - `retried_today`: a renewal failed in the last 20 hours (one try a day, even if
-     the job is called twice);
-   - `pending`: an earlier charge never finished (the function crashed between
-     CardCom and the database). `console.error` it every day until someone checks
-     CardCom's dashboard and marks the payment `paid` (with `finish_renewal`) or
-     `failed` by hand.
-2. `cardcomPost('Transactions/Transaction', …)`:
+   that plan's current price.
+   - If the subscription already has a renewal payment `pending` for 1 hour to 3
+     days (an earlier charge's outcome was unknown, or the function crashed between
+     CardCom and the database), it returns that payment again with `resend: true`
+     and its original amount and plan. It is sent again with the same
+     `ExternalUniqTranId`, so CardCom returns the first attempt's result, or charges
+     once if the first never arrived. `console.error('[cardcom] renewal re-sent', paymentId)`.
+   - Or it returns `{ skipped }` and the subscription is left alone:
+     - `not_due`: renewed or canceled meanwhile;
+     - `retried_today`: a renewal failed in the last 20 hours (one try a day, even
+       if the job is called twice);
+     - `pending`: a charge of it started less than an hour ago (another run may
+       still be waiting for CardCom);
+     - `stuck` (with `payment_id`): pending for more than 3 days, so resending isn't
+       working. `console.error` it every day until someone checks CardCom's dashboard
+       and finishes the payment by hand (`finish_renewal`, or set it `failed`). Until
+       then the subscription neither renews nor expires.
+2. `cardcomCharge(…)` (Task 1):
    ```json
    {
      "TerminalNumber": CARDCOM_TERMINAL_NUMBER,
@@ -473,14 +525,15 @@ Then select (service role) the ids of subscriptions with
      "Token": "<cardcom_token>",
      "CardExpirationMMYY": "0328",
      "ExternalUniqTranId": "<payments.id>",
+     "ExternalUniqUniqTranIdResponse": true,
      "NumOfPayments": 1,
      "ISOCoinId": 1,
      "CardOwnerInformation": { "FullName": "<name>", "IdentityNumber": "<cardcom_token_card_owner_identity_number>", "CardOwnerEmail": "<email>" },
      "Document": {
        "DocumentTypeToCreate": "Auto",
-       "IsAllowEditDocument": true,
        "Name": "<same as checkout>",
        "Email": "<email>",
+       "IsSendByEmail": true,
        "Language": "he",
        "Products": [{ "Description": "<plan name>", "UnitCost": 23, "Quantity": 1 }]
      }
@@ -488,10 +541,13 @@ Then select (service role) the ids of subscriptions with
    ```
    - `CardExpirationMMYY`: month zero-padded to 2 digits + the **last 2 digits** of
      the year (`CardYear` may come back as `28` or `2028`): month 3, year 2028 → `"0328"`.
-   - `ExternalUniqTranId` = the payment id, so the same payment can't be charged twice.
-   - `{ retry: false }` (Task 1). If the request throws, the outcome is unknown:
-     don't call `finish_renewal`; the payment stays `pending`, and `start_renewal`
-     reports it daily until it's checked by hand.
+     Use the saved `cardcom_token_card_month` / `_year`, **never** `TokenExDate`
+     (a card expiring 10/2027 has `TokenExDate` `20271101`, which would give `"1127"`).
+   - `ExternalUniqTranId` = the payment id with `ExternalUniqUniqTranIdResponse: true`
+     (Task 1), so the same payment is never charged twice, even when re-sent.
+   - No `IsAllowEditDocument`: it only applies to CardCom's payment page.
+   - `outcome: 'unknown'`: don't call `finish_renewal`; the payment stays
+     `pending` and is re-sent on the next run.
    - The payer's email: the user's email, or for an agency the agency admin's email.
 3. Response (ignore other fields): `{ ResponseCode, Description, TranzactionId, DocumentNumber, DocumentType }`.
    Save `cardcom_response_code`, `cardcom_description`, the document fields on the
@@ -500,7 +556,7 @@ Then select (service role) the ids of subscriptions with
    transaction, returns `{ status }` (the subscription's new status),
    `{ already_done: true }` if the payment was finished before, or
    `{ status, refund: true }` if the card was charged but the subscription had
-   ended meanwhile (a payment finished by hand late): the payment is `paid`, the
+   ended meanwhile (a late payment: re-sent, or finished by hand): the payment is `paid`, the
    subscription untouched; `console.error` it for a manual refund.
    - paid (`ResponseCode` = 0): payment `paid`; subscription `active`,
      `failed_renewals = 0`, `current_period_start` = the old end,
@@ -514,7 +570,14 @@ Then select (service role) the ids of subscriptions with
    - It calls `sync_subscription_status` itself.
 
 Handle each subscription separately: one failure must not stop the others.
-`console.log` a summary at the end (charged, failed, ended).
+`console.log` a summary at the end (charged, failed, ended, left for the next run).
+
+**Time budget**: the subscriptions are charged one after another, a charge can
+take up to 30 seconds, and an edge function is stopped at its wall-clock limit
+(150 s on the free plan, 400 s on paid). Don't start a new charge once 100 seconds
+have passed: the rest are picked up by the next run. If that happens often, add a
+second Cron run a few hours later (the 20-hour `retried_today` rule keeps it from
+charging twice).
 
 ## Task 6: Plan changes (`change-plan` edge function)
 
@@ -590,22 +653,23 @@ monthly ↔ yearly is refused with `plan_change_not_allowed`.
    `subscription_id` = the **old** subscription (`complete_upgrade` checks it, then
    moves it to the new one), `org_id` = `new_org_id`, `bought_by` = the user,
    `plan_code` = the new plan, `amount`. Then
-   `cardcomPost('Transactions/Transaction', …)` with the old subscription's token,
-   the same body as a renewal (Task 5) with `Amount` = the prorated amount,
-   `ExternalUniqTranId` = the payment id, and a product description like
-   "<new plan name> (until <date>)".
+   `cardcomCharge(…)` (Task 1) with the old subscription's token, the same body as
+   a renewal (Task 5) with `Amount` = the prorated amount, `ExternalUniqTranId` =
+   the payment id, and a product description like "<new plan name> (until <date>)".
 4. `ResponseCode` = 0: save the response fields on the payment, then
    `complete_upgrade`; return `{ upgraded: true }`.
 5. `ResponseCode` ≠ 0: payment `failed`,
    `console.error('[cardcom] upgrade failed', subscriptionId, Description)`, nothing
    else changes, throw `ApiError('upgrade_payment_failed', 402)`. The app says
    "The charge didn't go through. Your current plan hasn't changed."
-6. The request threw (`{ retry: false }`, outcome unknown): the payment stays
-   `pending`, `console.error('[cardcom] upgrade unconfirmed', paymentId)`, throw
+6. `outcome: 'unknown'` (Task 1): the payment stays `pending`,
+   `console.error('[cardcom] upgrade unconfirmed', paymentId)`, throw
    `ApiError('payment_unconfirmed', 502)`. The app says "We couldn't confirm the
-   charge. Please don't try again; we'll check it and update your plan." After
-   checking CardCom's dashboard: if it was charged, call `complete_upgrade` by hand
-   with the payment id; if not, set the payment `failed`.
+   charge. Please don't try again; we'll check it and update your plan." To
+   resolve it, send the same body again (same `ExternalUniqTranId`, so CardCom
+   returns the first result instead of charging), or check CardCom's dashboard:
+   if it was charged, call `complete_upgrade` by hand with the payment id; if
+   not, set the payment `failed`.
 
 ## Task 7: Stop the renewal (user)
 
@@ -626,7 +690,8 @@ token simply isn't charged again.
   charged yet" with how billing works, the 2 / 5 agent seat limits, upgrades
   charged on the saved card, and manual refunds.
 - PLAN.md: mark phase 5 as code done, and list what's left before launch (real
-  terminal, Cron job created, VAT status rechecked).
+  terminal set up as in "Before launch: the CardCom terminal", Cron job created,
+  VAT status rechecked).
 - `.env.example`: a comment that CardCom secrets are Supabase secrets, not env vars.
 - Regenerate `src/lib/database.types.ts`; `npm run build` passes.
 
@@ -652,7 +717,11 @@ Terminal `1000`, API name `CardTest1994`, and CardCom's published test card numb
 1. Personal user buys `agent_monthly` → redirected to CardCom → pays → back on
    `/dashboard/billing`: "confirming…", then active. Role is `agent`; the payment
    has a document number; a second property can be added.
-2. Fail a payment (a declined test card) → payment `failed`, nothing else changes.
+2. Fail a payment (a declined test card), then pay with a good card on the same
+   page → one webhook only (after the good card), the subscription starts. A decline
+   alone → no webhook, the payment stays `pending` and is hidden as abandoned after
+   a while; `?result=failed` says the payment didn't go through. Nothing else
+   changes. (See "A declined card, then a retry on the same page".)
 3. Send the same webhook twice → the second one changes nothing.
 4. Agency admin buys `agency_small_yearly` → invite 2 agents (OK) and a 3rd
    (`agency_seat_limit`). Before buying, joining fails with `subscription_required`.
@@ -677,31 +746,51 @@ Terminal `1000`, API name `CardTest1994`, and CardCom's published test card numb
     gets `cancel_at_period_end = true`.
 13. In the browser's network tab: no request to `cardcom.solutions`, no API name, and
     `subscriptions` responses contain no token.
+14. Charge re-sent: renew once, then set that payment back to `pending` with
+    `created_at` two hours ago and the period end back in the past, and run the job
+    again → CardCom returns the original transaction (same `TranzactionId`), the card
+    isn't charged twice, and the payment ends `paid`. This also confirms the field
+    name `ExternalUniqUniqTranIdResponse` (CardCom's examples spell it with "Uniq"
+    twice, its table without): if the answer is 608, try the other spelling. A
+    payment `pending` for more than 3 days is reported as `stuck` and not re-sent.
+15. Checkout details CardCom's docs leave open: the webhook body is JSON (with
+    `LowProfileId`; `payment-webhook` answers a form-encoded body with 400),
+    `CancelRedirectUrl` is accepted, `localhost` redirect URLs are accepted (Task
+    4.1), and an English checkout produces an English document emailed to the buyer.
 
-### Open: a declined card, then a retry on the same page
+### A declined card, then a retry on the same page
 
-Found in the code review of Tasks 3–4; check it during test 2. Not fixed yet.
+Found in the code review of Tasks 3–4; mostly answered by CardCom's docs
+(2026-10-12). Confirm it in test 2.
 
 `payment-webhook` marks the payment `failed` as soon as `GetLpResult` returns
 `ResponseCode` ≠ 0 (Task 3, step 7), and then ignores every later webhook for that
-`LowProfileId`, because the payment is no longer `pending`. If CardCom calls the
-webhook after a declined card **and** lets the user try again on the same page, the
-successful retry is ignored: the card is charged, but no subscription is created and
-the billing page says the payment failed.
+`LowProfileId`, because the payment is no longer `pending`. If CardCom called the
+webhook after a declined card **and** let the user try again on the same page, the
+successful retry would be ignored: the card charged, but no subscription created.
 
-To check: pay with a declined test card, then with a good one, on the same CardCom
-page. Watch the webhook calls in the function's logs.
+CardCom calls the webhook for declines only when "always report the transaction"
+is turned on (Task 3, step 1). **Keep it off**: then only the successful attempt
+calls the webhook, and there's nothing to fix. If it's ever turned on, step 7 must
+leave the payment `pending` while the page can still be paid.
 
-- One webhook only, after the successful retry: nothing to fix.
-- A webhook after the decline too: change step 7 to leave the payment `pending`
-  while the page can still be paid, and mark it `failed` only once it can't be.
-  Ask CardCom how `GetLpResult` reports that.
-- Meanwhile, if it happens: find the payment by its `LowProfileId`, check it in
-  CardCom's dashboard, and if it was charged, set it back to `pending` and send the
-  webhook again (or refund it).
+If it happens anyway: find the payment by its `LowProfileId`, check it in CardCom's
+dashboard, and if it was charged, set it back to `pending` and send the webhook
+again (or refund it).
 
-Also check that the CardCom webhook body is JSON. `payment-webhook` answers a
-form-encoded body with 400.
+## Before launch: the CardCom terminal
+
+From CardCom's docs (2026-10-12); ask CardCom when opening the real terminal:
+
+- The terminal must be set up **without a CVV requirement**, or token charges
+  (renewals, upgrades) fail. Whether it checks the ID number depends on the
+  agreement with the card company.
+- Modules: Low Profile (payment page), Tokens, Documents.
+- "Always report the transaction" stays **off** (Task 3).
+- Is it a standing-order (הוראת קבע) terminal? If yes, renewals may send
+  `Advanced.IsAutoRecurringPayment: true` for card-replacement updates
+  (מוחלפים). If not, that field must not be sent.
+- Run tests 14 and 15 on it once.
 
 ## Decisions (2026-10-11)
 
@@ -720,3 +809,14 @@ form-encoded body with 400.
 6. **Switching plans:** upgrades (agent → agency, small → large) are prorated and
    charged right away on the saved card; downgrades (large → small) apply at the
    next renewal with no refund; the period (monthly / yearly) can't change.
+
+## Decisions (2026-10-12), after checking CardCom's docs
+
+7. **Charges with an unknown outcome are sent again** with
+   `ExternalUniqUniqTranIdResponse: true`: a renewal payment left `pending` is
+   re-sent by the next runs for up to 3 days, and only then checked by hand. No
+   immediate retry (Tasks 1, 5, 6).
+8. **No webhook for declines** ("always report the transaction" off): a declined
+   checkout stays `pending` like an abandoned one.
+9. **Receipts are emailed** (`IsSendByEmail: true`) for checkouts, renewals and
+   upgrades.

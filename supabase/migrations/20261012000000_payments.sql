@@ -621,27 +621,47 @@ $$;
 -- { skipped: reason } when there is nothing to charge now:
 --   not_due        renewed, canceled, cancelling, or the period hasn't ended
 --   retried_today  a renewal of it failed in the last 20 hours (one try a day)
---   pending        an earlier charge never finished: check it in CardCom's
---                  dashboard, then mark the payment paid or failed by hand
+--   pending        a charge of it started less than an hour ago (in flight)
+--   stuck          a charge of it has been pending for more than 3 days:
+--                  check it in CardCom's dashboard, then finish it by hand
+-- A renewal payment pending for 1 hour to 3 days (its outcome was unknown, or
+-- the function crashed between CardCom and the database) is returned again,
+-- with resend: true, even if the subscription has stopped renewing meanwhile.
+-- The charge is re-sent with the same ExternalUniqTranId and
+-- ExternalUniqUniqTranIdResponse: true, so CardCom returns the original
+-- result instead of charging twice, and finish_renewal records it. After 3
+-- days it stops: resending isn't working, and a period paid that late would
+-- still end in the past.
 create or replace function public.start_renewal(p_subscription_id uuid) returns jsonb
 language plpgsql security definer set search_path = ''
 as $$
 declare
   sub public.subscriptions;
+  pending public.payments;
   charge_plan text;
   charge_amount numeric(10,2);
   pay_id uuid;
 begin
   select * into sub from public.subscriptions where id = p_subscription_id for update;
-  if not found or sub.status not in ('active', 'past_due') or sub.cancel_at_period_end
-     or sub.current_period_end > now() then
+  if not found then
     return jsonb_build_object('skipped', 'not_due');
   end if;
-  if exists (
-    select 1 from public.payments
-    where subscription_id = sub.id and kind = 'renewal' and status = 'pending'
-  ) then
-    return jsonb_build_object('skipped', 'pending');
+  select * into pending from public.payments
+  where subscription_id = sub.id and kind = 'renewal' and status = 'pending'
+  order by created_at limit 1;
+  if found then
+    if pending.created_at > now() - interval '1 hour' then
+      return jsonb_build_object('skipped', 'pending');
+    end if;
+    if pending.created_at < now() - interval '3 days' then
+      return jsonb_build_object('skipped', 'stuck', 'payment_id', pending.id);
+    end if;
+    return jsonb_build_object('payment_id', pending.id, 'amount', pending.amount,
+                              'plan_code', pending.plan_code, 'resend', true);
+  end if;
+  if sub.status not in ('active', 'past_due') or sub.cancel_at_period_end
+     or sub.current_period_end > now() then
+    return jsonb_build_object('skipped', 'not_due');
   end if;
   if exists (
     select 1 from public.payments
@@ -670,8 +690,8 @@ $$;
 -- past_due, and canceled after the 3rd failure in a row. Returns
 -- { status } (the subscription's new status), { already_done: true } if the
 -- payment was finished before, or { status, refund: true } when the card was
--- charged but the subscription had ended meanwhile (only possible when a
--- payment is finished by hand): the payment is paid, the subscription
+-- charged but the subscription had ended meanwhile (only possible for a late
+-- payment: re-sent by start_renewal, or finished by hand): the payment is paid, the subscription
 -- untouched, and the money must be refunded in CardCom's dashboard.
 drop function if exists public.finish_renewal(uuid, boolean, bigint);
 create function public.finish_renewal(p_payment_id uuid, p_paid boolean, p_tranzaction_id bigint)

@@ -31,9 +31,18 @@ type CheckoutResult = { result: 'paid' | 'duplicate' | 'already_done'; subscript
 
 const plain = (text: string, status = 200) => new Response(text, { status })
 
+/**
+ * A string or number field as trimmed text, or null. CardCom pads some
+ * strings with spaces ("040617649 ") and may send digit-only values as numbers.
+ */
+function text(value: unknown): string | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null
+  return String(value).trim() || null
+}
+
 /** CardCom's 'yyyyMMdd' as 'yyyy-MM-dd', or null. */
-function isoDate(value: string | null | undefined): string | null {
-  const m = /^(\d{4})(\d{2})(\d{2})$/.exec(value ?? '')
+function isoDate(value: unknown): string | null {
+  const m = /^(\d{4})(\d{2})(\d{2})$/.exec(text(value) ?? '')
   return m ? `${m[1]}-${m[2]}-${m[3]}` : null
 }
 
@@ -94,17 +103,20 @@ Deno.serve(async (req) => {
 
     const token = lp.TokenInfo ?? {}
     // Paid, but there will be nothing to charge at renewal.
-    if (!token.Token) console.error('[cardcom] paid checkout without a token', payment.id)
+    if (!text(token.Token)) console.error('[cardcom] paid checkout without a token', payment.id)
 
+    // The ID number is sent back on every renewal. The renewal's
+    // CardExpirationMMYY is built from CardMonth / CardYear, not TokenExDate
+    // (a card expiring 10/2027 has TokenExDate 20271101).
     const done = await rpc<CheckoutResult>('complete_checkout', {
       p_payment_id: payment.id,
       p_tranzaction_id: lp.TranzactionId ?? null,
-      p_token: token.Token ?? null,
+      p_token: text(token.Token),
       p_token_expires_on: isoDate(token.TokenExDate),
       p_card_year: token.CardYear ?? null,
       p_card_month: token.CardMonth ?? null,
-      p_approval_number: token.TokenApprovalNumber ?? null,
-      p_owner_identity_number: token.CardOwnerIdentityNumber ?? null,
+      p_approval_number: text(token.TokenApprovalNumber),
+      p_owner_identity_number: text(token.CardOwnerIdentityNumber),
     })
     if (done.result === 'duplicate') console.error('[cardcom] duplicate subscription payment', payment.id)
     return plain('OK')
