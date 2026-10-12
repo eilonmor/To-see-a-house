@@ -10,7 +10,7 @@
 import type { Lang } from '../i18n/translations'
 import type { Profile } from './auth'
 import type { Database } from './database.types'
-import { callFunction, run } from './supabase'
+import { BookingError, callFunction, run } from './supabase'
 
 export type Period = 'month' | 'year'
 
@@ -58,12 +58,15 @@ export type Payment = {
   createdAt: string
   paidAt: string | null
   documentNumber: number | null
+  /** A paid charge that bought nothing: refunded by hand ("due" until then). */
+  refund: 'due' | 'done' | null
 }
 
 const SUBSCRIPTION_COLUMNS =
   'id, user_id, org_id, plan_code, price, period, status, current_period_start, current_period_end, cancel_at_period_end, next_plan_code'
 
-const PAYMENT_COLUMNS = 'id, bought_by, plan_code, amount, kind, status, created_at, paid_at, cardcom_document_number'
+const PAYMENT_COLUMNS =
+  'id, bought_by, plan_code, amount, kind, status, created_at, paid_at, cardcom_document_number, refund_reason, refunded_at'
 
 /** Plans on sale, cheapest first. */
 export async function fetchPlans(): Promise<Plan[]> {
@@ -136,6 +139,7 @@ export async function fetchMyPayments(): Promise<Payment[]> {
     createdAt: r.created_at,
     paidAt: r.paid_at,
     documentNumber: r.cardcom_document_number,
+    refund: r.refund_reason ? (r.refunded_at ? 'done' : 'due') : null,
   }))
 }
 
@@ -146,4 +150,35 @@ export async function fetchMyPayments(): Promise<Payment[]> {
 export async function startCheckout(plan: string, lang: Lang): Promise<string> {
   const { url } = await callFunction<{ url: string }>('create-checkout', { plan, lang })
   return url
+}
+
+export type PlanChangeQuote = {
+  change: 'upgrade' | 'downgrade'
+  /** Charged now for the rest of the period, in shekels (0: no charge). */
+  amount: number
+}
+
+/** What moving to `plan` would do, for the confirm dialog. Raises plan_change_not_allowed. */
+export async function quotePlanChange(plan: string): Promise<PlanChangeQuote> {
+  const rows = await run((db) => db.rpc('plan_change_quote', { p_plan: plan }))
+  const row = rows[0]
+  if (!row) throw new BookingError('planChangeNotAllowed')
+  return { change: row.change as PlanChangeQuote['change'], amount: Number(row.amount) }
+}
+
+/**
+ * Upgrades now: the change-plan edge function charges the prorated amount
+ * on the saved card (CardCom is called only there) and switches the plan.
+ * The receipt is in `lang`.
+ */
+export async function upgradePlan(plan: string, lang: Lang): Promise<void> {
+  await callFunction<{ upgraded: true }>('change-plan', { plan, lang })
+}
+
+/**
+ * Schedules a downgrade for the next renewal (no charge). Called with the
+ * subscription's current plan, it cancels the scheduled downgrade.
+ */
+export async function scheduleDowngrade(plan: string): Promise<void> {
+  await run((db) => db.rpc('schedule_plan_change', { p_plan: plan }))
 }

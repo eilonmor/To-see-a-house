@@ -1,6 +1,7 @@
 // POST from Supabase Cron, once a day, with the header x-cron-secret:
 // ends the subscriptions whose renewal was stopped, then charges the saved
-// card of each subscription whose period has ended. Returns a JSON summary.
+// card of each subscription whose period has ended. Answers 202 at once and
+// keeps running in the background; the summary goes to the function log.
 //
 // Unauthenticated (verify_jwt = false): the CRON_SECRET header is the check.
 // The bookkeeping is in start_renewal / finish_renewal / expire_subscriptions;
@@ -9,13 +10,29 @@
 // See docs/cardcom-integration.md, Task 5.
 
 import { cardcomCharge } from '../_shared/cardcom.ts'
-import { admin, rpc } from '../_shared/db.ts'
+import { CARD_COLUMNS, payerOf, responseFields, tokenChargeBody, type ChargeBody } from '../_shared/charge.ts'
+import { admin, must, rpc } from '../_shared/db.ts'
+
+// Supabase's edge runtime: keeps the function running after the response.
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
 
 type StartResult =
   | { skipped: 'not_due' | 'retried_today' | 'pending' | 'stuck'; payment_id?: string }
   | { skipped?: undefined; payment_id: string; amount: number; plan_code: string; resend?: boolean }
 
 type FinishResult = { status?: string; already_done?: boolean; refund?: boolean }
+
+type Summary = {
+  expired: number
+  charged: number
+  failed: number
+  ended: number
+  unknown: number
+  skipped: number
+  refunds: number
+  errors: number
+  left: number
+}
 
 // Charges are made one after another and can take up to 30 seconds each; the
 // function is stopped at 150 s (free plan). Later ones wait for the next run.
@@ -38,64 +55,9 @@ async function sameSecret(a: string, b: string): Promise<boolean> {
   return diff === 0
 }
 
-function must<T>(res: { data: T | null; error: { code?: string; message: string } | null }, what: string): T {
-  if (res.error || res.data === null) throw new Error(`${what}: ${res.error?.code ?? ''} ${res.error?.message ?? 'not found'}`)
-  return res.data
-}
-
-async function emailOf(userId: string): Promise<string> {
-  const { data, error } = await admin.auth.admin.getUserById(userId)
-  if (error) throw new Error(`auth user ${userId}: ${error.message}`)
-  return data.user?.email ?? ''
-}
-
-/**
- * Who the charge and the document are for. A user pays for themselves; an
- * agency's card owner and email are its (oldest) agency admin's, and the
- * document is in the agency's name, as at checkout.
- */
-async function payerOf(sub: { user_id: string | null; org_id: string | null }) {
-  if (sub.user_id) {
-    const profile = must(await admin.from('profiles').select('full_name').eq('id', sub.user_id).single(), 'profiles')
-    const fullName = profile.full_name.trim()
-    return { fullName, email: await emailOf(sub.user_id), documentName: fullName }
-  }
-  const [orgRes, adminRes] = await Promise.all([
-    admin.from('organizations').select('name').eq('id', sub.org_id!).single(),
-    admin
-      .from('profiles')
-      .select('id, full_name')
-      .eq('org_id', sub.org_id!)
-      .eq('role', 'agency_admin')
-      .order('created_at')
-      .limit(1)
-      .maybeSingle(),
-  ])
-  const org = must(orgRes, 'organizations')
-  const orgAdmin = must(adminRes, 'agency admin')
-  const fullName = orgAdmin.full_name.trim()
-  return { fullName, email: await emailOf(orgAdmin.id), documentName: org.name.trim() || fullName }
-}
-
-/** Month zero-padded + the last 2 digits of the year (CardYear may be 28 or 2028), or null. */
-function expirationMMYY(month: number | null, year: number | null): string | null {
-  if (!Number.isInteger(month) || !Number.isInteger(year) || month! < 1 || month! > 12) return null
-  return String(month).padStart(2, '0') + String(year! % 100).padStart(2, '0')
-}
-
-Deno.serve(async (req) => {
-  if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405)
-  const secret = Deno.env.get('CRON_SECRET')
-  if (!secret) {
-    console.error('CRON_SECRET is not set')
-    return json({ error: 'server' }, 500)
-  }
-  if (!(await sameSecret(req.headers.get('x-cron-secret') ?? '', secret))) {
-    return json({ error: 'not_authenticated' }, 401)
-  }
-
-  const started = Date.now()
-  const summary = { expired: 0, charged: 0, failed: 0, ended: 0, unknown: 0, skipped: 0, refunds: 0, errors: 0, left: 0 }
+/** Expires the stopped subscriptions, then renews the due ones. Never throws. */
+async function renewAll(started: number): Promise<Summary> {
+  const summary: Summary = { expired: 0, charged: 0, failed: 0, ended: 0, unknown: 0, skipped: 0, refunds: 0, errors: 0, left: 0 }
 
   try {
     const expired = await rpc<{ expired: number; pending: string[] }>('expire_subscriptions', {})
@@ -131,122 +93,154 @@ Deno.serve(async (req) => {
       }
       const subscriptionId = ids[i]
       try {
-        const start = await rpc<StartResult>('start_renewal', { p_subscription_id: subscriptionId })
-        if (start.skipped) {
-          summary.skipped++
-          if (start.skipped === 'stuck') {
-            console.error('[cardcom] renewal stuck, check it in CardCom', subscriptionId, start.payment_id)
-          }
-          continue
-        }
-        const paymentId = start.payment_id
-        if (start.resend) console.error('[cardcom] renewal re-sent', paymentId)
-
-        const sub = must(
-          await admin
-            .from('subscriptions')
-            .select(
-              'user_id, org_id, cardcom_token, cardcom_token_card_month, cardcom_token_card_year, cardcom_token_card_owner_identity_number',
-            )
-            .eq('id', subscriptionId)
-            .single(),
-          'subscriptions',
-        )
-
-        const finish = async (paid: boolean, tranzactionId: number | null) => {
-          const done = await rpc<FinishResult>('finish_renewal', {
-            p_payment_id: paymentId,
-            p_paid: paid,
-            p_tranzaction_id: tranzactionId,
-          })
-          if (done.already_done) {
-            summary.skipped++
-            return
-          }
-          if (done.refund) {
-            summary.refunds++
-            console.error('[cardcom] renewal charged after the subscription ended, refund it', paymentId, subscriptionId)
-            return
-          }
-          if (paid) {
-            summary.charged++
-          } else {
-            summary.failed++
-            if (done.status === 'canceled') summary.ended++
-          }
-        }
-
-        const token = sub.cardcom_token?.trim()
-        const mmyy = expirationMMYY(sub.cardcom_token_card_month, sub.cardcom_token_card_year)
-        if (!token || !mmyy) {
-          console.error('[cardcom] renewal failed', subscriptionId, 'no saved card token or expiration date')
-          await finish(false, null)
-          continue
-        }
-
-        const [payer, planRes] = await Promise.all([
-          payerOf(sub),
-          admin.from('plans').select('name_he').eq('code', start.plan_code).single(),
-        ])
-        const plan = must(planRes, 'plans')
-        const amount = Math.round(Number(start.amount) * 100) / 100
-        const documentName = payer.documentName || payer.email
-
-        const { outcome, response } = await cardcomCharge({
-          Amount: amount,
-          Token: token,
-          CardExpirationMMYY: mmyy,
-          ExternalUniqTranId: paymentId,
-          NumOfPayments: 1,
-          ISOCoinId: 1,
-          CardOwnerInformation: {
-            FullName: payer.fullName || documentName,
-            IdentityNumber: sub.cardcom_token_card_owner_identity_number?.trim() || undefined,
-            CardOwnerEmail: payer.email,
-          },
-          Document: {
-            DocumentTypeToCreate: 'Auto',
-            Name: documentName,
-            Email: payer.email,
-            IsSendByEmail: true,
-            Language: 'he',
-            Products: [{ Description: plan.name_he, UnitCost: amount, Quantity: 1 }],
-          },
-        })
-
-        if (response) {
-          const saved = await admin
-            .from('payments')
-            .update({
-              cardcom_response_code: typeof response.ResponseCode === 'number' ? response.ResponseCode : null,
-              cardcom_description: response.Description ?? null,
-              cardcom_document_type: response.DocumentType ?? null,
-              cardcom_document_number: response.DocumentNumber ?? null,
-            })
-            .eq('id', paymentId)
-            .eq('status', 'pending')
-          if (saved.error) console.error('[cardcom] could not save the response', paymentId, saved.error.message)
-        }
-
-        if (outcome === 'unknown') {
-          // Stays pending; start_renewal returns it for resending on the next run.
-          summary.unknown++
-          continue
-        }
-        if (outcome === 'declined') {
-          console.error('[cardcom] renewal failed', subscriptionId, response?.Description)
-        }
-        await finish(outcome === 'paid', response?.TranzactionId ?? null)
+        await renewOne(subscriptionId, summary)
       } catch (err) {
         summary.errors++
         console.error('[renew] subscription', subscriptionId, err instanceof Error ? err.message : String(err))
       }
     }
   } catch (err) {
-    console.error('[renew]', err instanceof Error ? err.message : String(err), summary)
-    return json({ error: 'server', ...summary }, 500)
+    summary.errors++
+    console.error('[renew]', err instanceof Error ? err.message : String(err))
+  }
+  try {
+    await reportOpenIssues()
+  } catch (err) {
+    summary.errors++
+    console.error('[renew] report', err instanceof Error ? err.message : String(err))
+  }
+  return summary
+}
+
+// An upgrade charge takes seconds; one still pending after this was never confirmed.
+const UPGRADE_UNCONFIRMED_MS = 60 * 60_000
+
+/**
+ * Logged every day until someone handles them in CardCom's dashboard: paid
+ * charges to refund (then set refunded_at), and upgrade charges never
+ * confirmed (finish with complete_upgrade if charged, else set failed). Each
+ * of them also blocks further upgrades of its subscription.
+ */
+async function reportOpenIssues(): Promise<void> {
+  const [refundsRes, upgradesRes] = await Promise.all([
+    admin
+      .from('payments')
+      .select('id, refund_reason, amount')
+      .not('refund_reason', 'is', null)
+      .is('refunded_at', null)
+      .order('created_at'),
+    admin
+      .from('payments')
+      .select('id, subscription_id')
+      .eq('kind', 'upgrade')
+      .eq('status', 'pending')
+      .lt('created_at', new Date(Date.now() - UPGRADE_UNCONFIRMED_MS).toISOString()),
+  ])
+  const refunds = must(refundsRes, 'payments')
+  const upgrades = must(upgradesRes, 'payments')
+  if (refunds.length) console.error('[cardcom] refunds due, refund in CardCom and set refunded_at', refunds)
+  if (upgrades.length) console.error('[cardcom] upgrades unconfirmed, check them in CardCom', upgrades)
+}
+
+async function renewOne(subscriptionId: string, summary: Summary): Promise<void> {
+  const start = await rpc<StartResult>('start_renewal', { p_subscription_id: subscriptionId })
+  if (start.skipped) {
+    summary.skipped++
+    if (start.skipped === 'stuck') {
+      console.error('[cardcom] renewal stuck, check it in CardCom', subscriptionId, start.payment_id)
+    }
+    return
+  }
+  const paymentId = start.payment_id
+  if (start.resend) console.error('[cardcom] renewal re-sent', paymentId)
+
+  const finish = async (paid: boolean, tranzactionId: number | null) => {
+    const done = await rpc<FinishResult>('finish_renewal', {
+      p_payment_id: paymentId,
+      p_paid: paid,
+      p_tranzaction_id: tranzactionId,
+    })
+    if (done.already_done) {
+      summary.skipped++
+      return
+    }
+    if (done.refund) {
+      summary.refunds++
+      console.error('[cardcom] renewal charged after the subscription ended, refund it', paymentId, subscriptionId)
+      return
+    }
+    if (paid) {
+      summary.charged++
+    } else {
+      summary.failed++
+      // With `refund` (false) in the result, the subscription had ended before.
+      if (done.status === 'canceled' && done.refund === undefined) summary.ended++
+    }
   }
 
-  console.log('[renew] done', summary)
-  return json(summary)
+  // Couldn't be sent to CardCom. A new payment was never sent, so it fails
+  // (past_due, ended after 3 runs) instead of staying pending until it's
+  // stuck. A re-sent one may have been charged the first time: it stays
+  // pending, and is reported as stuck after 3 days for a check by hand.
+  const notSent = async (reason: string) => {
+    if (start.resend) {
+      summary.errors++
+      console.error('[cardcom] renewal not re-sent, left pending', subscriptionId, paymentId, reason)
+      return
+    }
+    console.error('[cardcom] renewal failed', subscriptionId, reason)
+    await finish(false, null)
+  }
+
+  let body: ChargeBody | null
+  try {
+    const sub = must(
+      await admin.from('subscriptions').select(`user_id, org_id, ${CARD_COLUMNS}`).eq('id', subscriptionId).single(),
+      'subscriptions',
+    )
+    const [payer, planRes] = await Promise.all([
+      payerOf(sub),
+      admin.from('plans').select('name_he').eq('code', start.plan_code).single(),
+    ])
+    const plan = must(planRes, 'plans')
+    body = tokenChargeBody({ paymentId, amount: Number(start.amount), card: sub, payer, product: plan.name_he, lang: 'he' })
+  } catch (err) {
+    return await notSent(err instanceof Error ? err.message : String(err))
+  }
+  if (!body) return await notSent('no saved card token or expiration date')
+
+  const { outcome, response } = await cardcomCharge(body)
+
+  if (response) {
+    const saved = await admin.from('payments').update(responseFields(response)).eq('id', paymentId).eq('status', 'pending')
+    if (saved.error) console.error('[cardcom] could not save the response', paymentId, saved.error.message)
+  }
+
+  if (outcome === 'unknown') {
+    // Stays pending; start_renewal returns it for resending on the next run.
+    summary.unknown++
+    return
+  }
+  if (outcome === 'declined') {
+    console.error('[cardcom] renewal failed', subscriptionId, response?.Description)
+  }
+  await finish(outcome === 'paid', response?.TranzactionId ?? null)
+}
+
+Deno.serve(async (req) => {
+  if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405)
+  const secret = Deno.env.get('CRON_SECRET')
+  if (!secret) {
+    console.error('CRON_SECRET is not set')
+    return json({ error: 'server' }, 500)
+  }
+  if (!(await sameSecret(req.headers.get('x-cron-secret') ?? '', secret))) {
+    return json({ error: 'not_authenticated' }, 401)
+  }
+
+  // A run can take minutes, and Cron's HTTP request gives up after a few
+  // seconds: answer now and keep running until the summary is logged.
+  const started = Date.now()
+  EdgeRuntime.waitUntil(renewAll(started).then((summary) => console.log('[renew] done', summary)))
+  return json({ started: true }, 202)
 })

@@ -338,6 +338,8 @@ export type Database = {
           cardcom_description: string | null
           cardcom_document_type: string | null
           cardcom_document_number: number | null
+          refund_reason: string | null
+          refunded_at: string | null
         }
         Insert: {
           id?: string
@@ -358,6 +360,8 @@ export type Database = {
           cardcom_description?: string | null
           cardcom_document_type?: string | null
           cardcom_document_number?: number | null
+          refund_reason?: string | null
+          refunded_at?: string | null
         }
         Update: Partial<Database['public']['Tables']['payments']['Insert']>
         Relationships: [
@@ -402,6 +406,11 @@ export type Database = {
       become_agent: { Args: Record<PropertyKey, never>; Returns: undefined }
       create_calendar_feed: { Args: Record<PropertyKey, never>; Returns: string }
       calendar_feed_events: { Args: { p_token: string }; Returns: Json }
+      plan_change_quote: {
+        Args: { p_plan: string }
+        Returns: { subscription_id: string; change: string; amount: number; new_org_id: string | null }[]
+      }
+      schedule_plan_change: { Args: { p_plan: string }; Returns: undefined }
     }
     Enums: {
       user_role: 'personal' | 'agent' | 'agency_admin'

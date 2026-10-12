@@ -241,7 +241,15 @@ exactly like `properties` (`owner_user_id` xor `owner_org_id`).
   `cardcom_low_profile_id text`, `cardcom_operation text`, `cardcom_tranzaction_id bigint`,
   `cardcom_response_code int`, `cardcom_description text`,
   `cardcom_document_type text`, `cardcom_document_number int`.
-- Unique index on `cardcom_low_profile_id`.
+- Unique index on `cardcom_low_profile_id`, and a partial unique index allowing
+  one `pending` upgrade payment per subscription (Task 6).
+- `refund_reason text null check (refund_reason in ('duplicate_checkout',
+  'duplicate_upgrade','late_renewal'))` and `refunded_at timestamptz null`: a paid
+  charge that bought nothing. Set in the same transaction that marks the payment
+  paid (Tasks 3, 5, 6), so it can't be lost with a log line; cleared from the daily
+  report by setting `refunded_at` after the refund in CardCom's dashboard (see
+  "Refunds and cancellations"). Both are granted to the browser: the payment
+  history shows "to be refunded" / "refunded".
 - RLS: payer reads their own payments (user, or agency admin for the agency).
   Column grants as on `subscriptions`: `cardcom_description`, the low-profile id and
   the response code aren't granted, so the app can't display CardCom's text even by
@@ -365,9 +373,12 @@ frontend runs on localhost; the functions run on Supabase).
    - returns `{ result: 'paid' | 'duplicate' | 'already_done', subscription_id }`.
      `already_done`: a concurrent webhook finished first, so nothing changed.
      `duplicate`: the payer meanwhile got another running subscription (two tabs,
-     two payments). The payment is still paid, no second subscription is created;
-     `console.error('[cardcom] duplicate subscription payment', paymentId)` so it's
-     refunded by hand in CardCom.
+     a payment page left open, or an upgrade). The payment is still paid with
+     `refund_reason = 'duplicate_checkout'`, no second subscription is created, and
+     a repeated call answers `duplicate` again;
+     `console.error('[cardcom] duplicate subscription payment', paymentId)`. It's
+     refunded by hand in CardCom. The billing page's "confirming…" ends with
+     "you already have a plan; we'll refund it".
 9. Return 200.
 
 ## Task 4: `create-checkout` edge function and the billing page
@@ -556,8 +567,9 @@ charged must still get its payment finished). For each:
    transaction, returns `{ status }` (the subscription's new status),
    `{ already_done: true }` if the payment was finished before, or
    `{ status, refund: true }` if the card was charged but the subscription had
-   ended meanwhile (a late payment: re-sent, or finished by hand): the payment is `paid`, the
-   subscription untouched; `console.error` it for a manual refund.
+   ended meanwhile (a late payment: re-sent, or finished by hand): the payment is `paid`
+   with `refund_reason = 'late_renewal'`, the subscription untouched; `console.error`
+   it for a manual refund.
    - paid (`ResponseCode` = 0): payment `paid`; subscription `active`,
      `failed_renewals = 0`, `current_period_start` = the old end,
      `current_period_end += 1 month / 1 year` (from the old end, not from today).
@@ -571,6 +583,11 @@ charged must still get its payment finished). For each:
 
 Handle each subscription separately: one failure must not stop the others.
 `console.log` a summary at the end (charged, failed, ended, left for the next run).
+
+Then, every run, `console.error` what needs a hand in CardCom's dashboard, until it's
+handled: payments with `refund_reason` set and `refunded_at` empty (`[cardcom] refunds
+due`), and upgrade payments still `pending` after an hour (`[cardcom] upgrades
+unconfirmed`, Task 6).
 
 **Time budget**: the subscriptions are charged one after another, a charge can
 take up to 30 seconds, and an edge function is stopped at its wall-clock limit
@@ -617,9 +634,23 @@ monthly ↔ yearly is refused with `plan_change_not_allowed`.
   `active = true`.
 - `public.plan_change_quote(p_plan text)`, granted to `authenticated`: the same,
   for `auth.uid()`. The billing page calls it for the confirm dialog.
+- `public.start_upgrade(p_user_id uuid, p_plan text)`, service role only, one
+  transaction, before the charge: runs `plan_change_check`, locks the subscription
+  (`for update`), runs the check again (an upgrade from another tab may have just
+  finished, so a second tab is refused **before** its card is charged), raises
+  `upgrade_in_progress` if the subscription has a `pending` upgrade payment, then
+  inserts the pending payment. Returns `{ subscription_id, amount, new_org_id,
+  payment_id }`; `payment_id` is null when the amount is 0.
+- While a subscription has a `pending` upgrade payment (being charged, or never
+  confirmed), nothing may change what it pays for: stopping the renewal
+  (`set_subscription_renewal(…, false)`), another upgrade, and a free upgrade all
+  raise `upgrade_in_progress`. (`schedule_plan_change` doesn't need it: downgrades
+  are only from large, upgrades only to large.)
 - `public.complete_upgrade(p_user_id uuid, p_plan text, p_payment_id uuid,
   p_tranzaction_id bigint)`, service role only, one transaction. `p_payment_id` is
   null when the amount was 0 (there is no `payments` row). It:
+  - refuses (`plan_change_not_allowed`) a `p_plan` other than the payment's
+    `plan_code`, so finishing a payment by hand can't give a bigger plan;
   - marks the payment `paid`, with `paid_at` and `cardcom_tranzaction_id`;
   - re-checks the change and locks the old subscription (`for update`);
   - sets the old subscription `canceled`, `ended_reason = 'upgraded'`;
@@ -630,10 +661,13 @@ monthly ↔ yearly is refused with `plan_change_not_allowed`.
   - links the payment to the new subscription;
   - calls `sync_subscription_status` for the old payer and the new one;
   - returns `{ result: 'upgraded' | 'duplicate' | 'already_done', subscription_id }`.
-    `duplicate`: the subscription changed meanwhile (two tabs). The payment is
-    still paid; `console.error('[cardcom] duplicate upgrade payment', paymentId)`
-    from the edge function, for a manual refund. Without a payment, the error code
-    is raised instead.
+    `duplicate`: the change isn't allowed any more (the agency's own checkout was
+    paid meanwhile, the plan was deactivated, or the subscription was changed by
+    hand). The payment is still paid, with `refund_reason = 'duplicate_upgrade'`,
+    and a repeated call answers `duplicate` again;
+    `console.error('[cardcom] duplicate upgrade payment', paymentId)` from the edge
+    function, for a manual refund. Without a payment, the error code is raised
+    instead.
 - `public.schedule_plan_change(p_plan text)`, granted to `authenticated`, called
   by the billing page directly (no CardCom call, so no edge function): for a
   downgrade, sets `next_plan_code`; raises `agency_seat_limit` if the agency has
@@ -645,19 +679,27 @@ monthly ↔ yearly is refused with `plan_change_not_allowed`.
 `POST { plan, lang }` with the user's session (`verify_jwt = true`, user from the
 `Authorization` header, as in `create-checkout`).
 
-1. `rpc('plan_change_check', { p_user_id, p_plan })` → the change, or its error
-   code. A downgrade → `plan_change_not_allowed` (the app calls
-   `schedule_plan_change` for those).
-2. Amount 0: `complete_upgrade` without a payment, return `{ upgraded: true }`.
-3. Otherwise insert a `payments` row: `pending`, `kind = 'upgrade'`,
+1. `rpc('start_upgrade', { p_user_id, p_plan })` (6.2) → the pending payment, or
+   its error code: a downgrade → `plan_change_not_allowed` (the app calls
+   `schedule_plan_change` for those); another upgrade of it pending →
+   `upgrade_in_progress`. The payment row: `pending`, `kind = 'upgrade'`,
    `subscription_id` = the **old** subscription (`complete_upgrade` checks it, then
    moves it to the new one), `org_id` = `new_org_id`, `bought_by` = the user,
-   `plan_code` = the new plan, `amount`. Then
-   `cardcomCharge(…)` (Task 1) with the old subscription's token, the same body as
-   a renewal (Task 5) with `Amount` = the prorated amount, `ExternalUniqTranId` =
-   the payment id, and a product description like "<new plan name> (until <date>)".
+   `plan_code` = the new plan, `amount`.
+2. Amount 0 (no `payment_id`): `complete_upgrade` without a payment, return
+   `{ upgraded: true }`.
+3. Otherwise `cardcomCharge(…)` (Task 1) with the old subscription's token, the
+   same body as a renewal (Task 5) with `Amount` = the prorated amount,
+   `Document.Language` = `lang`, `ExternalUniqTranId` = the payment id, and a
+   product description like "<new plan name> (until <date>)". The payer is the
+   agency (`new_org_id`). If anything fails before the charge is sent, the payment
+   is marked `failed`.
 4. `ResponseCode` = 0: save the response fields on the payment, then
-   `complete_upgrade`; return `{ upgraded: true }`.
+   `complete_upgrade`; return `{ upgraded: true }`. On `duplicate` (refund due,
+   see 6.2): throw `ApiError('upgrade_refund_due', 409)`: "The charge went through,
+   but the plan couldn't be changed. We'll refund the amount to your card." If
+   `complete_upgrade` itself fails, the payment stays `pending` (charged, not
+   recorded): `payment_unconfirmed`.
 5. `ResponseCode` ≠ 0: payment `failed`,
    `console.error('[cardcom] upgrade failed', subscriptionId, Description)`, nothing
    else changes, throw `ApiError('upgrade_payment_failed', 402)`. The app says
@@ -669,7 +711,8 @@ monthly ↔ yearly is refused with `plan_change_not_allowed`.
    resolve it, send the same body again (same `ExternalUniqTranId`, so CardCom
    returns the first result instead of charging), or check CardCom's dashboard:
    if it was charged, call `complete_upgrade` by hand with the payment id; if
-   not, set the payment `failed`.
+   not, set the payment `failed`. The daily renewal run reports it until then
+   (Task 5), and the subscription can't be upgraded again or stopped meanwhile.
 
 ## Task 7: Stop the renewal (user)
 
@@ -680,7 +723,8 @@ sets `cancel_at_period_end = true`. The subscription stays active until
 `current_period_end`, then Task 5 ends it. Until then a **Resume renewal** button
 calls it with `true`. An agency member can't resume their own subscription (it
 was stopped when they joined): `plan_not_allowed`. No CardCom call is needed: the
-token simply isn't charged again.
+token simply isn't charged again. While an upgrade of it is being charged (or
+unconfirmed), stopping it raises `upgrade_in_progress` (Task 6.2).
 
 ## Task 8: Docs and checks
 
@@ -709,6 +753,25 @@ select public.sync_subscription_status(<user_id or null>, <org_id or null>);
 ```
 
 Otherwise just let it run out with `cancel_at_period_end = true`.
+
+**Charges the app owes back** (`refund_reason` set: a duplicate checkout, an upgrade
+that couldn't be applied, a renewal after the subscription ended) are listed every
+day in the renewal job's log until handled, and by:
+
+```sql
+select id, refund_reason, amount, cardcom_tranzaction_id, created_at
+from public.payments
+where refund_reason is not null and refunded_at is null
+order by created_at;
+```
+
+Refund each one in CardCom's dashboard by its transaction id, then:
+
+```sql
+update public.payments set refunded_at = now() where id = '<payment id>';
+```
+
+The user's payment history then shows it as "refunded".
 
 ## Testing with the test terminal
 

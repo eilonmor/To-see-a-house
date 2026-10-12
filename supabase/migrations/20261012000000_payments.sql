@@ -104,6 +104,20 @@ create table if not exists public.payments (
 create index if not exists payments_subscription_id_idx on public.payments (subscription_id);
 create index if not exists payments_user_id_idx on public.payments (user_id);
 create index if not exists payments_org_id_idx on public.payments (org_id);
+-- A paid charge that bought nothing, to refund by hand in CardCom's dashboard
+-- (then set refunded_at): a second subscription for the same payer, an
+-- upgrade the subscription no longer allowed, or a renewal of a subscription
+-- that had ended. Set in the same transaction that marks the payment paid.
+alter table public.payments
+  add column if not exists refund_reason text
+    check (refund_reason in ('duplicate_checkout', 'duplicate_upgrade', 'late_renewal')),
+  add column if not exists refunded_at timestamptz;
+create index if not exists payments_refund_due_idx on public.payments (created_at)
+  where refund_reason is not null and refunded_at is null;
+-- One upgrade charge at a time per subscription, while it's pending or
+-- unconfirmed. start_upgrade checks this under a lock; the index backs it up.
+create unique index if not exists payments_one_pending_upgrade_idx
+  on public.payments (subscription_id) where kind = 'upgrade' and status = 'pending';
 
 -- ===========================================================================
 -- Row Level Security
@@ -134,7 +148,8 @@ grant select (id, user_id, org_id, plan_code, price, period, status,
               failed_renewals, next_plan_code, ended_reason, created_at, canceled_at)
   on public.subscriptions to authenticated;
 grant select (id, subscription_id, user_id, org_id, bought_by, plan_code, amount, kind,
-              status, created_at, paid_at, cardcom_document_type, cardcom_document_number)
+              status, created_at, paid_at, cardcom_document_type, cardcom_document_number,
+              refund_reason, refunded_at)
   on public.payments to authenticated;
 
 -- ===========================================================================
@@ -346,8 +361,9 @@ $$;
 -- paid, the subscription starts with the saved card, a personal buyer of an
 -- agent plan becomes an agent. Returns { result: 'paid' | 'duplicate' |
 -- 'already_done', subscription_id }. 'duplicate': the payer got another
--- running subscription meanwhile (two tabs); the payment is paid anyway and
--- must be refunded by hand.
+-- running subscription meanwhile (two tabs, or a payment page left open); the
+-- payment is paid anyway, with refund_reason set, and must be refunded by
+-- hand. Called again, it answers 'duplicate' again.
 create or replace function public.complete_checkout(
   p_payment_id uuid,
   p_tranzaction_id bigint,
@@ -371,7 +387,9 @@ begin
     raise exception 'payment_not_found';
   end if;
   if pay.status <> 'pending' then
-    return jsonb_build_object('result', 'already_done', 'subscription_id', pay.subscription_id);
+    return jsonb_build_object(
+      'result', case when pay.refund_reason is not null then 'duplicate' else 'already_done' end,
+      'subscription_id', pay.subscription_id);
   end if;
 
   update public.payments
@@ -392,6 +410,7 @@ begin
     )
     returning id into sub_id;
   exception when unique_violation then
+    update public.payments set refund_reason = 'duplicate_checkout' where id = pay.id;
     return jsonb_build_object('result', 'duplicate', 'subscription_id', null);
   end;
 
@@ -499,12 +518,66 @@ returns table (subscription_id uuid, change text, amount numeric, new_org_id uui
 language sql stable security definer set search_path = ''
 as $$ select * from public.plan_change_check(auth.uid(), p_plan) $$;
 
+-- Raises upgrade_in_progress if the subscription has an upgrade charge in
+-- flight (or never confirmed): until it's finished, nothing may change what
+-- that charge is paying for.
+create or replace function public.assert_no_pending_upgrade(p_subscription_id uuid) returns void
+language plpgsql stable security definer set search_path = ''
+as $$
+begin
+  if exists (
+    select 1 from public.payments
+    where subscription_id = p_subscription_id and kind = 'upgrade' and status = 'pending'
+  ) then
+    raise exception 'upgrade_in_progress';
+  end if;
+end
+$$;
+
+-- Before change-plan charges an upgrade, in one transaction: locks the
+-- subscription, checks the change again (an upgrade from another tab may have
+-- just finished) and that no other upgrade of it is being charged, then
+-- inserts the pending payment. Returns { subscription_id, amount, new_org_id,
+-- payment_id }; payment_id is null when the amount is 0 (no charge: call
+-- complete_upgrade without a payment).
+create or replace function public.start_upgrade(p_user_id uuid, p_plan text) returns jsonb
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  q record;
+  locked uuid;
+  pay_id uuid;
+begin
+  select * into q from public.plan_change_check(p_user_id, p_plan);
+  if q.change <> 'upgrade' then
+    raise exception 'plan_change_not_allowed';
+  end if;
+  select id into locked from public.subscriptions where id = q.subscription_id for update;
+  -- Waited for whoever held the lock: check against what they committed.
+  select * into q from public.plan_change_check(p_user_id, p_plan);
+  if q.change <> 'upgrade' or q.subscription_id is distinct from locked then
+    raise exception 'plan_change_not_allowed';
+  end if;
+  perform public.assert_no_pending_upgrade(locked);
+
+  if q.amount > 0 then
+    insert into public.payments (subscription_id, org_id, bought_by, plan_code, amount, kind)
+    values (locked, q.new_org_id, p_user_id, p_plan, q.amount, 'upgrade')
+    returning id into pay_id;
+  end if;
+  return jsonb_build_object('subscription_id', locked, 'amount', q.amount,
+                            'new_org_id', q.new_org_id, 'payment_id', pay_id);
+end
+$$;
+
 -- After the upgrade's charge succeeded (or without a payment when the amount
 -- is 0), in one transaction: the old subscription ends ('upgraded'), and the
 -- agency gets a new one on the new plan with the same period and the same
 -- saved card. Returns { result: 'upgraded' | 'duplicate' | 'already_done',
--- subscription_id }. 'duplicate': the subscription changed meanwhile (two
--- tabs); the payment is paid anyway and must be refunded by hand.
+-- subscription_id }. 'duplicate': the change isn't allowed any more (the
+-- agency's own checkout was paid, the plan deactivated, or the subscription
+-- changed by hand while it was being charged); the payment is paid anyway, with refund_reason
+-- set, and must be refunded by hand. Called again, it answers 'duplicate' again.
 create or replace function public.complete_upgrade(
   p_user_id uuid, p_plan text, p_payment_id uuid, p_tranzaction_id bigint
 ) returns jsonb
@@ -522,8 +595,14 @@ begin
     if not found or pay.kind <> 'upgrade' then
       raise exception 'payment_not_found';
     end if;
+    -- Finished by hand with the wrong plan: the payment is for pay.plan_code.
+    if pay.plan_code <> p_plan then
+      raise exception 'plan_change_not_allowed';
+    end if;
     if pay.status <> 'pending' then
-      return jsonb_build_object('result', 'already_done', 'subscription_id', pay.subscription_id);
+      return jsonb_build_object(
+        'result', case when pay.refund_reason is not null then 'duplicate' else 'already_done' end,
+        'subscription_id', pay.subscription_id);
     end if;
     update public.payments
     set status = 'paid', paid_at = now(), cardcom_tranzaction_id = p_tranzaction_id
@@ -540,6 +619,10 @@ begin
     select * into old from public.subscriptions where id = q.subscription_id for update;
     if old.status <> 'active' or old.cancel_at_period_end then
       raise exception 'plan_change_not_allowed';
+    end if;
+    -- A free upgrade waits for a charged one of the same subscription.
+    if pay.id is null then
+      perform public.assert_no_pending_upgrade(old.id);
     end if;
     select * into pl from public.plans where code = p_plan;
 
@@ -562,6 +645,7 @@ begin
     if pay.id is null then
       raise;
     end if;
+    update public.payments set refund_reason = 'duplicate_upgrade' where id = pay.id;
     return jsonb_build_object('result', 'duplicate', 'subscription_id', null);
   end;
 
@@ -691,8 +775,9 @@ $$;
 -- { status } (the subscription's new status), { already_done: true } if the
 -- payment was finished before, or { status, refund: true } when the card was
 -- charged but the subscription had ended meanwhile (only possible for a late
--- payment: re-sent by start_renewal, or finished by hand): the payment is paid, the subscription
--- untouched, and the money must be refunded in CardCom's dashboard.
+-- payment: re-sent by start_renewal, or finished by hand): the payment is paid
+-- with refund_reason 'late_renewal', the subscription untouched, and the money
+-- must be refunded in CardCom's dashboard.
 drop function if exists public.finish_renewal(uuid, boolean, bigint);
 create function public.finish_renewal(p_payment_id uuid, p_paid boolean, p_tranzaction_id bigint)
 returns jsonb
@@ -715,7 +800,8 @@ begin
     update public.payments
     set status = case when p_paid then 'paid' else 'failed' end,
         paid_at = case when p_paid then now() end,
-        cardcom_tranzaction_id = p_tranzaction_id
+        cardcom_tranzaction_id = p_tranzaction_id,
+        refund_reason = case when p_paid then 'late_renewal' end
     where id = pay.id;
     return jsonb_build_object('status', sub.status, 'refund', p_paid);
   end if;
@@ -806,6 +892,10 @@ begin
   if p_renew and sub.user_id is not null and public.my_org_id() is not null then
     raise exception 'plan_not_allowed';
   end if;
+  -- An upgrade being charged needs the renewal on (complete_upgrade checks it).
+  if not p_renew then
+    perform public.assert_no_pending_upgrade(sub.id);
+  end if;
   update public.subscriptions set cancel_at_period_end = not p_renew where id = sub.id;
 end
 $$;
@@ -822,6 +912,8 @@ revoke execute on function
   public.checkout_payer(uuid, text),
   public.complete_checkout(uuid, bigint, text, date, int, int, text, text),
   public.plan_change_check(uuid, text),
+  public.assert_no_pending_upgrade(uuid),
+  public.start_upgrade(uuid, text),
   public.complete_upgrade(uuid, text, uuid, bigint),
   public.start_renewal(uuid),
   public.finish_renewal(uuid, boolean, bigint),
@@ -843,6 +935,7 @@ grant execute on function
   public.checkout_payer(uuid, text),
   public.complete_checkout(uuid, bigint, text, date, int, int, text, text),
   public.plan_change_check(uuid, text),
+  public.start_upgrade(uuid, text),
   public.complete_upgrade(uuid, text, uuid, bigint),
   public.start_renewal(uuid),
   public.finish_renewal(uuid, boolean, bigint),
