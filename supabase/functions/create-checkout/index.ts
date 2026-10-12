@@ -72,8 +72,9 @@ Deno.serve(
         Operation: OPERATION,
         ReturnValue: payment.id,
         Amount: amount,
-        SuccessRedirectUrl: `${appUrl}/dashboard/billing?result=success`,
-        FailedRedirectUrl: `${appUrl}/dashboard/billing?result=failed`,
+        // The billing page waits for this payment, not whichever checkout is newest.
+        SuccessRedirectUrl: `${appUrl}/dashboard/billing?result=success&payment=${payment.id}`,
+        FailedRedirectUrl: `${appUrl}/dashboard/billing?result=failed&payment=${payment.id}`,
         CancelRedirectUrl: `${appUrl}/dashboard/billing`,
         WebHookUrl: `${supabaseUrl}/functions/v1/payment-webhook`,
         Language: lang,

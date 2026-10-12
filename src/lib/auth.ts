@@ -23,6 +23,8 @@ export type Profile = {
    * this too); personal users are on the free plan instead.
    */
   planActive: boolean
+  /** The agency's subscription is running (false outside an agency). */
+  agencyPlanActive: boolean
 }
 
 const isRunning = (status: string | null | undefined) => status === 'active' || status === 'past_due'
@@ -153,6 +155,7 @@ export async function fetchProfile(userId: string): Promise<Profile> {
     orgId: row.org_id,
     lastPropertyCreatedAt: row.last_property_created_at,
     planActive: isRunning(row.subscription_status) || isRunning(row.organizations?.subscription_status),
+    agencyPlanActive: isRunning(row.organizations?.subscription_status),
   }
 }
 

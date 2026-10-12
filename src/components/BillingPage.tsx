@@ -63,9 +63,12 @@ const planName = (plans: Plan[], code: string, lang: Lang) => plans.find((p) => 
  */
 export default function BillingPage() {
   const { t } = useI18n()
-  const { user, profile, reloadProfile } = useAccount()
-  // CardCom sends the browser back with ?result=success or ?result=failed.
-  const [result] = useState(() => new URLSearchParams(window.location.search).get('result'))
+  const { profile, reloadProfile } = useAccount()
+  // CardCom sends the browser back with ?result=success or ?result=failed, and &payment=<id>.
+  const [{ result, paymentId }] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    return { result: params.get('result'), paymentId: params.get('payment') }
+  })
 
   useEffect(() => {
     // Shown once: a reload or a shared link doesn't repeat it.
@@ -100,7 +103,7 @@ export default function BillingPage() {
     <div className="space-y-6 pt-6">
       <h1 className="text-2xl font-bold tracking-tight text-slate-900">{t.billing.title}</h1>
 
-      {result === 'success' && <CheckoutResult userId={user.id} onConfirmed={onConfirmed} />}
+      {result === 'success' && paymentId && <CheckoutResult paymentId={paymentId} onConfirmed={onConfirmed} />}
       {result === 'failed' && <Alert>{t.billing.failed}</Alert>}
       {upgraded && <Alert tone="info">{t.billing.upgraded}</Alert>}
 
@@ -139,7 +142,9 @@ export default function BillingPage() {
               />
             </SubscriptionCard>
           )}
-          {audience === null && <Alert tone="info">{t.billing.covered}</Alert>}
+          {audience === null && (
+            <Alert tone="info">{profile.agencyPlanActive ? t.billing.covered : t.properties.agencyNeedsPlan}</Alert>
+          )}
           {audience && !data.subs[audience === 'agency' ? 'agency' : 'own'] && (
             <PlanPicker audience={audience} plans={data.plans.filter((p) => p.audience === audience)} />
           )}
@@ -150,8 +155,8 @@ export default function BillingPage() {
   )
 }
 
-/** "Confirming your payment…" until the user's latest checkout is no longer pending. */
-function CheckoutResult({ userId, onConfirmed }: { userId: string; onConfirmed: () => void }) {
+/** "Confirming your payment…" until the checkout CardCom sent the browser back from is no longer pending. */
+function CheckoutResult({ paymentId, onConfirmed }: { paymentId: string; onConfirmed: () => void }) {
   const { t } = useI18n()
   const [state, setState] = useState<'confirming' | 'paid' | 'failed' | 'refund' | 'timeout'>('confirming')
   // Called once; a newer callback (after the profile reloads) doesn't restart polling.
@@ -167,12 +172,12 @@ function CheckoutResult({ userId, onConfirmed }: { userId: string; onConfirmed: 
 
     async function check() {
       try {
-        const latest = (await fetchMyPayments()).find((p) => p.kind === 'checkout' && p.boughtBy === userId)
+        const payment = (await fetchMyPayments()).find((p) => p.id === paymentId)
         if (stopped) return
-        if (latest && latest.status !== 'pending') {
+        if (payment && payment.status !== 'pending') {
           // Paid, but the payer already had a plan: no second one, refunded by hand.
-          setState(latest.refund ? 'refund' : latest.status)
-          if (latest.status === 'paid') confirmed.current()
+          setState(payment.refund ? 'refund' : payment.status)
+          if (payment.status === 'paid') confirmed.current()
           return
         }
       } catch {
@@ -188,7 +193,7 @@ function CheckoutResult({ userId, onConfirmed }: { userId: string; onConfirmed: 
       stopped = true
       clearTimeout(timer)
     }
-  }, [userId])
+  }, [paymentId])
 
   if (state === 'confirming') {
     return (
