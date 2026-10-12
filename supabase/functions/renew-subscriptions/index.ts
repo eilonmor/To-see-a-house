@@ -10,7 +10,7 @@
 // See docs/cardcom-integration.md, Task 5.
 
 import { cardcomCharge } from '../_shared/cardcom.ts'
-import { CARD_COLUMNS, payerOf, responseFields, tokenChargeBody, type ChargeBody } from '../_shared/charge.ts'
+import { CARD_COLUMNS, payerOf, responseFields, tokenChargeBody } from '../_shared/charge.ts'
 import { admin, must, rpc } from '../_shared/db.ts'
 
 // Supabase's edge runtime: keeps the function running after the response.
@@ -178,10 +178,10 @@ async function renewOne(subscriptionId: string, summary: Summary): Promise<void>
     }
   }
 
-  // Couldn't be sent to CardCom. A new payment was never sent, so it fails
-  // (past_due, ended after 3 runs) instead of staying pending until it's
-  // stuck. A re-sent one may have been charged the first time: it stays
-  // pending, and is reported as stuck after 3 days for a check by hand.
+  // The card can't be charged (no saved token). A new payment was never sent,
+  // so it fails (past_due, ended after 3 runs) instead of staying pending
+  // until it's stuck. A re-sent one may have been charged the first time: it
+  // stays pending, and is reported as stuck after 3 days for a check by hand.
   const notSent = async (reason: string) => {
     if (start.resend) {
       summary.errors++
@@ -192,21 +192,18 @@ async function renewOne(subscriptionId: string, summary: Summary): Promise<void>
     await finish(false, null)
   }
 
-  let body: ChargeBody | null
-  try {
-    const sub = must(
-      await admin.from('subscriptions').select(`user_id, org_id, ${CARD_COLUMNS}`).eq('id', subscriptionId).single(),
-      'subscriptions',
-    )
-    const [payer, planRes] = await Promise.all([
-      payerOf(sub),
-      admin.from('plans').select('name_he').eq('code', start.plan_code).single(),
-    ])
-    const plan = must(planRes, 'plans')
-    body = tokenChargeBody({ paymentId, amount: Number(start.amount), card: sub, payer, product: plan.name_he, lang: 'he' })
-  } catch (err) {
-    return await notSent(err instanceof Error ? err.message : String(err))
-  }
+  // A lookup failure throws: our error isn't the card's, so the payment stays
+  // pending and the next run re-sends it (or reports it stuck after 3 days).
+  const sub = must(
+    await admin.from('subscriptions').select(`user_id, org_id, ${CARD_COLUMNS}`).eq('id', subscriptionId).single(),
+    'subscriptions',
+  )
+  const [payer, planRes] = await Promise.all([
+    payerOf(sub),
+    admin.from('plans').select('name_he').eq('code', start.plan_code).single(),
+  ])
+  const plan = must(planRes, 'plans')
+  const body = tokenChargeBody({ paymentId, amount: Number(start.amount), card: sub, payer, product: plan.name_he, lang: 'he' })
   if (!body) return await notSent('no saved card token or expiration date')
 
   const { outcome, response } = await cardcomCharge(body)

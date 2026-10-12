@@ -19,7 +19,7 @@ export const SUPABASE = {
 }
 
 // Where "contact us" links lead (billing page: more than 5 agents, payment problems).
-export const CONTACT_EMAIL = 'info@example.com' // TODO: the real address before launch
+export const CONTACT_EMAIL = 'customer-service@netlink.world'
 
 // Optional: a property the root page (/) shows instead of the home page.
 // Every property is also reached through its own link: /p/<slug>.

@@ -559,6 +559,8 @@ charged must still get its payment finished). For each:
    - No `IsAllowEditDocument`: it only applies to CardCom's payment page.
    - `outcome: 'unknown'`: don't call `finish_renewal`; the payment stays
      `pending` and is re-sent on the next run.
+   - A database lookup fails before the charge (our error, not the card's): the
+     same, the payment stays `pending` and is re-sent on the next run.
    - The payer's email: the user's email, or for an agency the agency admin's email.
 3. Response (ignore other fields): `{ ResponseCode, Description, TranzactionId, DocumentNumber, DocumentType }`.
    Save `cardcom_response_code`, `cardcom_description`, the document fields on the
