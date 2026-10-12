@@ -334,6 +334,8 @@ const he = {
     agencyBadge: 'של הסוכנות',
     upgrade: 'שדרוג לחשבון מתווך',
     upgradeHelp: 'בחשבון מתווך: דירות ומועדי ביקור ללא הגבלה.',
+    needsPlan: 'כדי להוסיף דירות חדשות צריך מנוי פעיל. הדירות הקיימות ממשיכות לעבוד כרגיל.',
+    agencyNeedsPlan: 'לסוכנות אין מנוי פעיל, ולכן אי אפשר להוסיף דירות חדשות. הדירות הקיימות ממשיכות לעבוד כרגיל. בקשו ממנהל הסוכנות לרכוש מנוי.',
   },
   setup: {
     title: 'הוספת דירה',
@@ -823,6 +825,9 @@ const en: Translation = {
     agencyBadge: 'Agency',
     upgrade: 'Upgrade to an agent account',
     upgradeHelp: 'Agent accounts get unlimited apartments and viewing dates.',
+    needsPlan: 'You need an active plan to add new apartments. Your existing apartments keep working as usual.',
+    agencyNeedsPlan:
+      "The agency doesn't have an active plan, so new apartments can't be added. Existing apartments keep working as usual. Ask the agency admin to buy a plan.",
   },
   setup: {
     title: 'Add an apartment',

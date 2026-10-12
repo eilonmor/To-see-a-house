@@ -27,6 +27,10 @@ const PERIODS: Period[] = ['month', 'year']
 const CONFIRM_POLL_MS = 3000
 const CONFIRM_TIMEOUT_MS = 60_000
 
+// A checkout still pending after this was left on CardCom's page without
+// paying: it never finishes, so the history doesn't show it.
+const ABANDONED_CHECKOUT_MS = 60 * 60_000
+
 const formatPrice = (amount: number, lang: Lang) =>
   new Intl.NumberFormat(lang === 'en' ? 'en-IL' : 'he-IL', {
     style: 'currency',
@@ -293,15 +297,19 @@ function PlanPicker({ audience, plans }: { audience: 'agent' | 'agency'; plans: 
 function PaymentHistory({ payments, plans }: { payments: Payment[]; plans: Plan[] }) {
   const { t, lang } = useI18n()
   const statusStyle = { pending: 'bg-slate-100 text-slate-700', paid: 'bg-emerald-50 text-emerald-700', failed: 'bg-rose-50 text-rose-700' }
+  const abandonedBefore = Date.now() - ABANDONED_CHECKOUT_MS
+  const shown = payments.filter(
+    (p) => !(p.kind === 'checkout' && p.status === 'pending' && Date.parse(p.createdAt) < abandonedBefore),
+  )
 
   return (
     <Card>
       <h2 className="text-lg font-semibold text-slate-900">{t.billing.historyTitle}</h2>
-      {payments.length === 0 ? (
+      {shown.length === 0 ? (
         <p className="mt-2 text-sm text-slate-500">{t.billing.noPayments}</p>
       ) : (
         <ul className="mt-4 divide-y divide-slate-100">
-          {payments.map((p) => (
+          {shown.map((p) => (
             <li key={p.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 text-sm">
               <div className="min-w-0">
                 <p className="font-medium text-slate-800">

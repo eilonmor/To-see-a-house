@@ -678,6 +678,31 @@ Terminal `1000`, API name `CardTest1994`, and CardCom's published test card numb
 13. In the browser's network tab: no request to `cardcom.solutions`, no API name, and
     `subscriptions` responses contain no token.
 
+### Open: a declined card, then a retry on the same page
+
+Found in the code review of Tasks 3–4; check it during test 2. Not fixed yet.
+
+`payment-webhook` marks the payment `failed` as soon as `GetLpResult` returns
+`ResponseCode` ≠ 0 (Task 3, step 7), and then ignores every later webhook for that
+`LowProfileId`, because the payment is no longer `pending`. If CardCom calls the
+webhook after a declined card **and** lets the user try again on the same page, the
+successful retry is ignored: the card is charged, but no subscription is created and
+the billing page says the payment failed.
+
+To check: pay with a declined test card, then with a good one, on the same CardCom
+page. Watch the webhook calls in the function's logs.
+
+- One webhook only, after the successful retry: nothing to fix.
+- A webhook after the decline too: change step 7 to leave the payment `pending`
+  while the page can still be paid, and mark it `failed` only once it can't be.
+  Ask CardCom how `GetLpResult` reports that.
+- Meanwhile, if it happens: find the payment by its `LowProfileId`, check it in
+  CardCom's dashboard, and if it was charged, set it back to `pending` and send the
+  webhook again (or refund it).
+
+Also check that the CardCom webhook body is JSON. `payment-webhook` answers a
+form-encoded body with 400.
+
 ## Decisions (2026-10-11)
 
 1. **Existing agents and agencies:** no free period. The app is pre-launch, so

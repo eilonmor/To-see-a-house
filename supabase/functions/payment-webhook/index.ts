@@ -76,9 +76,10 @@ Deno.serve(async (req) => {
       .update({
         cardcom_response_code: code,
         cardcom_description: lp.Description ?? null,
-        cardcom_operation: lp.Operation ?? null,
         cardcom_document_type: lp.DocumentInfo?.DocumentType ?? null,
         cardcom_document_number: lp.DocumentInfo?.DocumentNumber ?? null,
+        // Keep the operation create-checkout saved when CardCom doesn't repeat it.
+        ...(lp.Operation ? { cardcom_operation: lp.Operation } : {}),
       })
       .eq('id', payment.id)
       .eq('status', 'pending')

@@ -24,6 +24,9 @@ export default function PropertyList() {
     }
   }
 
+  // Agents and agencies need a subscription to add properties (also checked by the database).
+  const needsPlan = profile.role !== 'personal' && !profile.planActive
+
   // An agency invite opened before signing up (sign-up and Google land here).
   const invite = pendingInvite()
   if (invite) return <Redirect to={`/join/${encodeURIComponent(invite)}`} />
@@ -32,7 +35,7 @@ export default function PropertyList() {
     <div className="space-y-6 pt-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">{t.properties.title}</h1>
-        {!loading && !blockedReason && (
+        {!loading && !blockedReason && !needsPlan && (
           <Link
             href="/dashboard/new"
             className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
@@ -43,6 +46,7 @@ export default function PropertyList() {
       </div>
 
       {profile.role === 'personal' && <FreePlanNote />}
+      {needsPlan && <NoPlanNote agencyAgent={profile.role === 'agent' && profile.orgId !== null} />}
 
       {error != null && (
         <Alert>
@@ -55,7 +59,7 @@ export default function PropertyList() {
       ) : (
         <>
           {blockedReason && <Alert tone="info">{blockedReason}</Alert>}
-          {properties.length === 0 && error == null && !blockedReason && <Alert tone="info">{t.properties.empty}</Alert>}
+          {properties.length === 0 && error == null && !blockedReason && !needsPlan && <Alert tone="info">{t.properties.empty}</Alert>}
           <ul className="grid gap-4 sm:grid-cols-2">
             {properties.map((property) => (
               <li key={property.id}>
@@ -85,6 +89,23 @@ function FreePlanNote() {
         {t.properties.upgrade}
       </Link>
     </div>
+  )
+}
+
+/**
+ * An agent or agency without a running subscription: existing properties
+ * keep working, new ones need a plan. Only the admin can buy the agency's.
+ */
+function NoPlanNote({ agencyAgent }: { agencyAgent: boolean }) {
+  const { t } = useI18n()
+  if (agencyAgent) return <Alert tone="info">{t.properties.agencyNeedsPlan}</Alert>
+  return (
+    <Alert tone="info">
+      {t.properties.needsPlan}{' '}
+      <Link href="/dashboard/billing" className="font-medium underline">
+        {t.billing.choosePlan}
+      </Link>
+    </Alert>
   )
 }
 
