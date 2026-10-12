@@ -121,6 +121,18 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
     npx supabase secrets set APP_URL=https://your-domain.com
     npx supabase functions deploy calendar-feed
     ```
+11. **Schedule the renewals** (after deploying `renew-subscriptions`). Set the secret,
+    then in **Integrations → Cron → Create job** add a daily HTTP request:
+    ```bash
+    npx supabase secrets set CRON_SECRET=$(openssl rand -base64 48)
+    ```
+    - Schedule `0 3 * * *`: 06:00 Israel time in summer, 05:00 in winter (Cron runs in UTC).
+    - Method `POST` to `https://<project-ref>.supabase.co/functions/v1/renew-subscriptions`.
+    - Header `x-cron-secret: <CRON_SECRET>`; no body needed.
+
+    The function answers 401 without the right header, and returns a summary
+    (charged, failed, ended, …) that also goes to **Edge Functions →
+    renew-subscriptions → Logs**.
 
 #### SMS limits
 
