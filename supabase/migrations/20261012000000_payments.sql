@@ -887,14 +887,30 @@ begin
   if not found then
     raise exception 'subscription_not_found';
   end if;
-  -- An agency member's own subscription ran out when they joined (the agency
-  -- covers them); it can't be resumed.
-  if p_renew and sub.user_id is not null and public.my_org_id() is not null then
-    raise exception 'plan_not_allowed';
+  -- An own subscription the agency covers can't be resumed: an agent's was
+  -- stopped when they joined, an admin's when the agency's plan was bought.
+  -- An admin whose agency has no plan yet still relies on their own (and may
+  -- upgrade it to the agency, 2.7), so they may resume it.
+  if p_renew and sub.user_id is not null and exists (
+    select 1 from public.profiles p
+    where p.id = sub.user_id and p.org_id is not null
+      and (p.role <> 'agency_admin'
+           or public.payer_subscription_status(null, p.org_id) in ('active', 'past_due'))
+  ) then
+    raise exception 'covered_by_agency';
   end if;
-  -- An upgrade being charged needs the renewal on (complete_upgrade checks it).
   if not p_renew then
+    -- An upgrade being charged needs the renewal on (complete_upgrade checks it).
     perform public.assert_no_pending_upgrade(sub.id);
+    -- A renewal being charged (or re-sent, for up to 3 days) is finished by
+    -- start_renewal whatever this flag says: stopping now would still be
+    -- charged for a whole new period, against what the user was told.
+    if exists (
+      select 1 from public.payments
+      where subscription_id = sub.id and kind = 'renewal' and status = 'pending'
+    ) then
+      raise exception 'renewal_in_progress';
+    end if;
   end if;
   update public.subscriptions set cancel_at_period_end = not p_renew where id = sub.id;
 end

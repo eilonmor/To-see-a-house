@@ -335,6 +335,16 @@ const he = {
     downgradeScheduled: (n: number, date: string) => `ב-${date} המנוי יעבור ל-${n} מתווכים.`,
     keepSeats: (n: number) => `להישאר עם ${n} מתווכים`,
     changeError: 'לא ניתן לשנות את המנוי:',
+    cancelRenewal: 'ביטול החידוש',
+    cancelRenewalConfirm: (date: string) =>
+      `המנוי לא יתחדש. הוא יישאר פעיל עד ${date}, ואז יסתיים. לא יינתן החזר על התקופה הנוכחית. הדירות והביקורים הקיימים יישמרו.`,
+    cancelRenewalAgency: 'בסיום המנוי, המתווכים בסוכנות לא יוכלו להוסיף דירות חדשות.',
+    endsSoon: 'המנוי לא יתחדש, ויסתיים תוך יום. הדירות והביקורים הקיימים יישמרו.',
+    resumeRenewal: 'חידוש המנוי',
+    resumeRenewalSoon: 'נחייב את הכרטיס השמור בימים הקרובים, והמנוי יתחדש.',
+    resumeRenewalConfirm: (date: string) => `המנוי יתחדש אוטומטית ב-${date}, בכרטיס השמור.`,
+    renewalError: 'לא ניתן לעדכן את החידוש:',
+    coveredByAgency: 'המנוי של הסוכנות מכסה אותך, ולכן המנוי הזה לא יתחדש.',
     refundDue: 'יוחזר',
     refunded: 'הוחזר',
     checkoutRefundDue: 'התשלום התקבל, אבל כבר יש לך מנוי פעיל, ולכן לא נוצר מנוי נוסף. נחזיר את הסכום לכרטיס.',
@@ -516,6 +526,8 @@ const he = {
     paymentNotFound: () => 'התשלום לא נמצא.',
     upgradeRefundDue: () => 'החיוב עבר, אבל לא ניתן היה לשנות את המנוי. נחזיר את הסכום לכרטיס.',
     upgradeInProgress: () => 'יש שינוי מנוי שעדיין בבדיקה. נסו שוב בעוד כמה דקות; אם זה חוזר, צרו איתנו קשר.',
+    renewalInProgress: () => 'חיוב החידוש של המנוי עדיין בטיפול. נסו שוב מחר; אם זה חוזר, צרו איתנו קשר.',
+    coveredByAgency: () => 'המנוי של הסוכנות מכסה אותך, ולכן אין צורך לחדש את המנוי הזה.',
   },
 }
 
@@ -846,6 +858,16 @@ const en: Translation = {
       `From ${date}, the plan will include ${n} agents and cost ${price} ${per}. Until then nothing changes.`,
     downgradeScheduled: (n: number, date: string) => `On ${date} the plan switches to ${n} agents.`,
     keepSeats: (n: number) => `Keep ${n} agents`,
+    cancelRenewal: 'Cancel renewal',
+    cancelRenewalConfirm: (date: string) =>
+      `The plan won't renew. It stays active until ${date}, then ends. The current period isn't refunded. Your properties and visits are kept.`,
+    cancelRenewalAgency: "When the plan ends, the agency's agents can't add new properties.",
+    endsSoon: "The plan won't renew, and it ends within a day. Your properties and visits are kept.",
+    resumeRenewal: 'Resume renewal',
+    resumeRenewalSoon: "We'll charge your saved card in the next few days, and the plan will renew.",
+    resumeRenewalConfirm: (date: string) => `The plan will renew automatically on ${date}, on your saved card.`,
+    renewalError: "Couldn't update the renewal:",
+    coveredByAgency: "Your agency's plan covers you, so this plan won't renew.",
     changeError: 'Could not change the plan:',
     refundDue: 'To be refunded',
     refunded: 'Refunded',
@@ -1031,6 +1053,8 @@ const en: Translation = {
     paymentNotFound: () => 'The payment was not found.',
     upgradeRefundDue: () => "The charge went through, but the plan couldn't be changed. We'll refund the amount to your card.",
     upgradeInProgress: () => 'A plan change is still being confirmed. Try again in a few minutes; if this keeps happening, contact us.',
+    renewalInProgress: () => "The plan's renewal charge is still being processed. Try again tomorrow; if this keeps happening, contact us.",
+    coveredByAgency: () => "Your agency's plan covers you, so this plan doesn't need to renew.",
   },
 }
 

@@ -6,6 +6,7 @@ import {
   fetchPlans,
   quotePlanChange,
   scheduleDowngrade,
+  setRenewal,
   startCheckout,
   upgradePlan,
   type MySubscriptions,
@@ -49,6 +50,9 @@ const longDate = (iso: string, lang: Lang) =>
 /** A plan-change error after which the card may have been charged: checked or refunded by hand. */
 const isChargeIssue = (err: unknown) =>
   err instanceof BookingError && ['paymentUnconfirmed', 'upgradeRefundDue', 'upgradeInProgress'].includes(err.code)
+
+/** Its period has ended but it's still running: past due, or waiting for the daily renewal run. */
+const periodOver = (sub: Subscription) => sub.status === 'past_due' || Date.parse(sub.currentPeriodEnd) <= Date.now()
 
 const planName = (plans: Plan[], code: string, lang: Lang) => plans.find((p) => p.code === code)?.name[lang] ?? code
 
@@ -118,6 +122,7 @@ export default function BillingPage() {
           {data.subs.agency && (
             <SubscriptionCard title={t.billing.agencyTitle} sub={data.subs.agency} plans={data.plans}>
               <PlanChange sub={data.subs.agency} plans={data.plans} onStart={onPlanAction} onUpgraded={onUpgraded} onChanged={refresh} />
+              <RenewalControl sub={data.subs.agency} coveredByAgency={false} onStart={onPlanAction} onChanged={refresh} />
             </SubscriptionCard>
           )}
           {data.subs.own && (
@@ -126,6 +131,12 @@ export default function BillingPage() {
               {profile.role === 'agency_admin' && !data.subs.agency && (
                 <PlanChange sub={data.subs.own} plans={data.plans} onStart={onPlanAction} onUpgraded={onUpgraded} onChanged={refresh} />
               )}
+              <RenewalControl
+                sub={data.subs.own}
+                coveredByAgency={profile.role === 'agent' ? !!profile.orgId : !!data.subs.agency}
+                onStart={onPlanAction}
+                onChanged={refresh}
+              />
             </SubscriptionCard>
           )}
           {audience === null && <Alert tone="info">{t.billing.covered}</Alert>}
@@ -233,16 +244,95 @@ function SubscriptionCard({
           {formatPrice(sub.price, lang)} {t.billing.perPeriod[sub.period]}
         </p>
       </div>
-      {sub.status === 'past_due' && <Alert>{t.billing.pastDue}</Alert>}
+      {sub.status === 'past_due' && !sub.cancelAtPeriodEnd && <Alert>{t.billing.pastDue}</Alert>}
       <p className="text-sm text-slate-600">
-        {sub.cancelAtPeriodEnd ? t.billing.endsOn(end) : t.billing.nextCharge(end, formatPrice(nextPrice, lang))}
+        {sub.cancelAtPeriodEnd
+          ? periodOver(sub)
+            ? t.billing.endsSoon
+            : t.billing.endsOn(end)
+          : t.billing.nextCharge(end, formatPrice(nextPrice, lang))}
       </p>
       {nextPlan?.agentSeats && !sub.cancelAtPeriodEnd && (
         <p className="text-sm text-slate-600">{t.billing.downgradeScheduled(nextPlan.agentSeats, end)}</p>
       )}
       {children}
-      {/* Stopping / resuming the renewal (Task 7) goes here. */}
     </Card>
+  )
+}
+
+/**
+ * Stops the automatic renewal (the plan stays until the end of its period)
+ * or resumes it. An own plan the agency covers can't be resumed (the
+ * database checks this again).
+ */
+function RenewalControl({
+  sub,
+  coveredByAgency,
+  onStart,
+  onChanged,
+}: {
+  sub: Subscription
+  coveredByAgency: boolean
+  onStart: () => void
+  onChanged: () => void
+}) {
+  const { t, lang } = useI18n()
+  const confirm = useConfirm()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  const end = longDate(sub.currentPeriodEnd, lang)
+
+  // The period has ended: the plan ends (or is charged) at the next renewal run.
+  const over = periodOver(sub)
+
+  async function change(renew: boolean) {
+    const ok = renew
+      ? await confirm(over ? t.billing.resumeRenewalSoon : t.billing.resumeRenewalConfirm(end), {
+          confirmLabel: t.billing.resumeRenewal,
+        })
+      : await confirm(
+          [
+            over ? t.billing.endsSoon : t.billing.cancelRenewalConfirm(end),
+            // The agency's agents are covered by this plan.
+            sub.orgId ? t.billing.cancelRenewalAgency : '',
+          ].join(' '),
+          { tone: 'danger', confirmLabel: t.billing.cancelRenewal },
+        )
+    if (!ok) return
+    setBusy(true)
+    onStart()
+    setError(null)
+    try {
+      await setRenewal(sub.id, renew)
+      onChanged()
+    } catch (err) {
+      setError(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (sub.cancelAtPeriodEnd && coveredByAgency) {
+    return <p className="text-sm text-slate-500">{t.billing.coveredByAgency}</p>
+  }
+
+  return (
+    <div className="space-y-3 border-t border-slate-100 pt-3">
+      {sub.cancelAtPeriodEnd ? (
+        <Button variant="secondary" onClick={() => change(true)} disabled={busy}>
+          {busy && <Spinner />} {t.billing.resumeRenewal}
+        </Button>
+      ) : (
+        <Button variant="danger" onClick={() => change(false)} disabled={busy}>
+          {busy && <Spinner />} {t.billing.cancelRenewal}
+        </Button>
+      )}
+      {error != null && (
+        <Alert>
+          {t.billing.renewalError} {errorText(error, t)}
+        </Alert>
+      )}
+    </div>
   )
 }
 

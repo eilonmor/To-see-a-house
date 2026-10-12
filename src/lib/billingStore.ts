@@ -182,3 +182,11 @@ export async function upgradePlan(plan: string, lang: Lang): Promise<void> {
 export async function scheduleDowngrade(plan: string): Promise<void> {
   await run((db) => db.rpc('schedule_plan_change', { p_plan: plan }))
 }
+
+/**
+ * Stops (`renew` false) or resumes the automatic renewal. A stopped plan
+ * stays active until the end of its period, then ends (no CardCom call).
+ */
+export async function setRenewal(subscriptionId: string, renew: boolean): Promise<void> {
+  await run((db) => db.rpc('set_subscription_renewal', { p_subscription_id: subscriptionId, p_renew: renew }))
+}
