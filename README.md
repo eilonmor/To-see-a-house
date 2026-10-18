@@ -258,6 +258,13 @@ The app uses path routes (`/p/<slug>`, `/dashboard`), so the host must serve
 `index.html` for every path. Cloudflare Pages does this by default when the
 build has no `404.html`.
 
+If the project is a Cloudflare **Worker** with static assets (Workers Builds),
+[`wrangler.jsonc`](wrangler.jsonc) configures it: `name` must match the Worker
+name in the dashboard, `not_found_handling` serves `index.html` for every path,
+and the `previews` block lets non-production branches build with
+`npx wrangler preview`. Enable **Builds for non-production branches** under
+**Settings → Build**, and set the `VITE_*` variables for the preview builds too.
+
 ---
 
 ## Project structure
