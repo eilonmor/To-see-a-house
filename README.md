@@ -75,7 +75,8 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
    `…_agency_checkout.sql`), or with the Supabase CLI.
    Hold back `…_payments.sql` until the payment functions are deployed (step 11),
    and apply it last: from then on, agents and agencies can't add properties or
-   accept agents without a subscription. It is safe to run again after it changes.
+   accept agents without a subscription. It is safe to run again after it changes,
+   but then run `…_agency_checkout.sql` again too: it replaces some of its functions.
    Hold back `…_revoke_guest_anon.sql` until the edge functions (step 8) and the new
    frontend are live: it cuts off the browser's direct access to the booking functions.
    `db push` applies every pending file, including that one, so on an existing

@@ -313,13 +313,14 @@ the user's id, returns `(payer_user_id, payer_org_id, agency_name)` or raises:
 - `agency_*`:
   - the caller is `agency_admin` (an agency whose plan ended) → payer is their agency;
   - the caller has no agency → a new agency: payer is the user, `agency_name` the
-    trimmed `p_agency_name` (empty → `missing_agency_name`). `complete_checkout`
-    opens the agency when the payment succeeds;
+    trimmed `p_agency_name` (empty → `missing_agency_name`, over 100 characters →
+    `agency_name_too_long`). `complete_checkout` opens the agency when the payment
+    succeeds, and `SuccessRedirectUrl` gets `&agency=new` so the billing page says so;
   - an agent inside an agency → `plan_not_allowed`.
 - The payer already has an `active` or `past_due` subscription → `already_subscribed`.
   Not checked for a new agency: the buyer's own agent plan runs out instead (below).
 - `agency_*` and the caller has their own agent subscription that could be
-  upgraded (`active`, not cancelling, same period) → `use_upgrade`: the app
+  upgraded (`active`, not cancelling, same period, period not ended) → `use_upgrade`: the app
   offers the upgrade (Task 6) instead, so they don't pay twice for the same
   period. If it can't be upgraded (cancelling, `past_due`, or the other period),
   the checkout goes ahead, and `complete_checkout` stops the renewal of the own
@@ -374,7 +375,9 @@ frontend runs on localhost; the functions run on Supabase).
    - for a new agency (`payments.agency_name` set): opens it with
      `open_agency()` (the buyer becomes its `agency_admin`) and moves the payment
      to it (`user_id` null, `org_id` the agency). If the buyer joined or opened
-     an agency meanwhile, it's a `duplicate` (below);
+     an agency meanwhile (`already_in_agency`), it's a `duplicate` (below); any
+     other error fails the call, the payment stays `pending`, and the webhook
+     answers 500 so CardCom sends it again;
    - creates the subscription (`active`, `price` = the payment's amount, `period`
      from the plan, `current_period_start` = now, `current_period_end` = now + 1
      month or 1 year) with the `TokenInfo` fields, and links the payment to it;

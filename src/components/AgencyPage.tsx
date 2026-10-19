@@ -17,7 +17,6 @@ import {
 import {
   fetchMySubscription,
   fetchPlans,
-  quotePlanChange,
   startCheckout,
   upgradePlan,
   type Period,
@@ -29,7 +28,16 @@ import { usePolledData } from '../hooks/usePolledData'
 import { navigate } from '../hooks/useRoute'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { useAccount } from './AccountGate'
-import { ContactLink, formatPrice, isChargeIssue, longDate, PeriodToggle, PlanOption } from './BillingPage'
+import {
+  canMoveToAgency,
+  ContactLink,
+  isChargeIssue,
+  LoadErrorAlert,
+  PaymentErrorAlert,
+  PeriodToggle,
+  PlanOption,
+  useUpgradeConfirm,
+} from './BillingPage'
 import { useConfirm } from './ConfirmDialog'
 import { Alert, Button, Card, CopyButton, Field, Loading, Spinner } from './ui'
 
@@ -103,7 +111,7 @@ type OpenData = { plans: Plan[]; own: Subscription | null }
  */
 function OpenAgency() {
   const { t, lang } = useI18n()
-  const confirm = useConfirm()
+  const confirmUpgrade = useUpgradeConfirm()
   const { profile, reloadProfile } = useAccount()
   const [name, setName] = useState('')
   const [nameMissing, setNameMissing] = useState(false)
@@ -115,15 +123,20 @@ function OpenAgency() {
   // Opened, but the profile couldn't be reloaded: opening again would fail.
   const [opened, setOpened] = useState(false)
 
-  const load = useCallback(async (): Promise<OpenData> => {
-    const [plans, subs] = await Promise.all([fetchPlans(), fetchMySubscription(profile)])
-    return { plans: plans.filter((p) => p.audience === 'agency'), own: subs.own }
+  // Loaded once, not polled: plans rarely change, and the database checks
+  // the plan and the subscription again when paying.
+  const [data, setData] = useState<OpenData | null>(null)
+  const [loadError, setLoadError] = useState<unknown>(null)
+  const load = useCallback(() => {
+    setLoadError(null)
+    Promise.all([fetchPlans(), fetchMySubscription(profile)]).then(
+      ([plans, subs]) => setData({ plans: plans.filter((p) => p.audience === 'agency'), own: subs.own }),
+      setLoadError,
+    )
   }, [profile])
-  const { data, loading, error: loadError, refresh } = usePolledData<OpenData | null>(load, null)
+  useEffect(load, [load])
 
-  // An agent plan that can move to the agency (the database checks this again).
-  const own = data?.own
-  const movable = own && own.status === 'active' && !own.cancelAtPeriodEnd && Date.parse(own.currentPeriodEnd) > Date.now() ? own : null
+  const movable = data?.own && canMoveToAgency(data.own) ? data.own : null
   const shownPeriod = period ?? movable?.period ?? 'month'
   const moves = (plan: Plan) => movable?.period === plan.period
 
@@ -141,16 +154,7 @@ function OpenAgency() {
         window.location.assign(await startCheckout(plan.code, lang, name))
         return
       }
-      const quote = await quotePlanChange(plan.code)
-      if (quote.change !== 'upgrade') throw new BookingError('planChangeNotAllowed')
-      const end = longDate(movable!.currentPeriodEnd, lang)
-      const price = formatPrice(plan.price, lang)
-      const per = t.billing.perPeriod[plan.period]
-      const message =
-        quote.amount > 0
-          ? t.billing.upgradeConfirm(formatPrice(quote.amount, lang), end, price, per)
-          : t.billing.upgradeFree(end, price, per)
-      if (!(await confirm(message, { confirmLabel: t.agency.openConfirmLabel }))) {
+      if (!(await confirmUpgrade(plan, movable!, t.agency.openConfirmLabel))) {
         setBusy(null)
         return
       }
@@ -159,7 +163,7 @@ function OpenAgency() {
       setError(err)
       // The card may have been charged: the agency may be open already.
       if (isChargeIssue(err)) {
-        refresh()
+        load()
         reloadProfile().catch(() => {})
       }
       setBusy(null)
@@ -176,14 +180,9 @@ function OpenAgency() {
 
   if (!data) {
     return loadError != null ? (
-      <Alert>
-        {t.billing.loadError} {errorText(loadError, t)}{' '}
-        <Button variant="secondary" className="ms-2 px-3! py-1! text-xs" onClick={refresh}>
-          {t.billing.retry}
-        </Button>
-      </Alert>
+      <LoadErrorAlert prefix={t.billing.loadError} error={loadError} onRetry={load} />
     ) : (
-      loading && <Loading label={t.dashboard.loading} />
+      <Loading label={t.dashboard.loading} />
     )
   }
 
@@ -212,6 +211,7 @@ function OpenAgency() {
           label={t.agency.name}
           placeholder={t.agency.namePlaceholder}
           value={name}
+          maxLength={100}
           error={nameMissing ? errorText(new BookingError('missingAgencyName'), t) : undefined}
           onChange={(e) => {
             setName(e.target.value)
@@ -244,17 +244,7 @@ function OpenAgency() {
       <p className="text-sm text-slate-500">
         {t.billing.moreAgents} <ContactLink />
       </p>
-      {error != null && (
-        <Alert>
-          {errorText(error, t)}
-          {error instanceof BookingError && (isChargeIssue(error) || error.code === 'checkoutUnavailable') && (
-            <>
-              {' '}
-              <ContactLink />
-            </>
-          )}
-        </Alert>
-      )}
+      {error != null && <PaymentErrorAlert error={error} />}
       {opened && <Alert tone="info">{t.account.reloadAfterAction}</Alert>}
       <p className="text-xs text-slate-500">{t.billing.payNote}</p>
     </Card>
@@ -490,6 +480,7 @@ function NameEditor({ agency, onSaved }: { agency: Agency; onSaved: (agency: Age
           id="agency-rename"
           label={t.agency.nameTitle}
           value={name}
+          maxLength={100}
           onChange={(e) => {
             setName(e.target.value)
             setStatus(null)

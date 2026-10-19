@@ -15,19 +15,35 @@ alter table public.payments
 
 drop function if exists public.create_agency(text);
 
+-- A new agency's name, trimmed. Raises missing_agency_name, or
+-- agency_name_too_long over 100 characters (it's also the receipt's name).
+create or replace function public.clean_agency_name(p_name text) returns text
+language plpgsql immutable set search_path = ''
+as $$
+declare
+  cleaned text := trim(coalesce(p_name, ''));
+begin
+  if cleaned = '' then
+    raise exception 'missing_agency_name';
+  end if;
+  if length(cleaned) > 100 then
+    raise exception 'agency_name_too_long';
+  end if;
+  return cleaned;
+end
+$$;
+
 -- Opens an agency named p_name with p_user_id as its admin. Raises
--- missing_agency_name or already_in_agency. Called only by complete_checkout
--- and complete_upgrade, after the payment.
+-- missing_agency_name, agency_name_too_long or already_in_agency. Called only
+-- by complete_checkout and complete_upgrade, after the payment.
 create or replace function public.open_agency(p_user_id uuid, p_name text) returns uuid
 language plpgsql security definer set search_path = ''
 as $$
 declare
   prof public.profiles;
   new_org uuid;
+  cleaned text := public.clean_agency_name(p_name);
 begin
-  if trim(coalesce(p_name, '')) = '' then
-    raise exception 'missing_agency_name';
-  end if;
   select * into prof from public.profiles where id = p_user_id for update;
   if not found then
     raise exception 'not_authenticated';
@@ -36,7 +52,7 @@ begin
     raise exception 'already_in_agency';
   end if;
 
-  insert into public.organizations (name) values (trim(p_name)) returning id into new_org;
+  insert into public.organizations (name) values (cleaned) returning id into new_org;
   update public.profiles set role = 'agency_admin', org_id = new_org where id = prof.id;
   return new_org;
 end
@@ -50,8 +66,11 @@ $$;
 -- (null, org_id) for an agency admin's agency plan, and (user_id, null) with
 -- the agency's name for an agency plan bought by a user outside an agency
 -- (the agency is opened when it's paid). Raises plan_not_allowed,
--- missing_agency_name, already_subscribed or use_upgrade.
+-- missing_agency_name, agency_name_too_long, already_subscribed or use_upgrade.
+-- The old signature is dropped, and the new one too, so running this again
+-- recreates it (its return type changed, so create or replace can't).
 drop function if exists public.checkout_payer(uuid, text);
+drop function if exists public.checkout_payer(uuid, text, text);
 create function public.checkout_payer(p_user_id uuid, p_plan text, p_agency_name text default null)
 returns table (payer_user_id uuid, payer_org_id uuid, agency_name text)
 language plpgsql stable security definer set search_path = ''
@@ -82,10 +101,7 @@ begin
     -- An agent inside an agency.
     raise exception 'plan_not_allowed';
   else
-    if trim(coalesce(p_agency_name, '')) = '' then
-      raise exception 'missing_agency_name';
-    end if;
-    agency_name := trim(p_agency_name);
+    agency_name := public.clean_agency_name(p_agency_name);
   end if;
 
   -- A new agency has no subscription yet; the buyer's own agent plan doesn't
@@ -98,12 +114,13 @@ begin
     raise exception 'already_subscribed';
   end if;
 
-  -- A buyer whose own agent subscription can move to the agency (Task 6)
-  -- shouldn't pay twice for the same period.
+  -- A buyer whose own agent subscription can move to the agency (Task 6:
+  -- the same conditions as plan_change_check) shouldn't pay twice for the
+  -- same period.
   if pl.audience = 'agency' and exists (
     select 1 from public.subscriptions s
     where s.user_id = prof.id and s.status = 'active' and not s.cancel_at_period_end
-      and s.period = pl.period
+      and s.period = pl.period and s.current_period_end > now()
   ) then
     raise exception 'use_upgrade';
   end if;
@@ -176,10 +193,18 @@ begin
       p_approval_number, p_owner_identity_number
     )
     returning id into sub_id;
-  exception when unique_violation or raise_exception then
-    -- raise_exception: open_agency's already_in_agency.
-    update public.payments set refund_reason = 'duplicate_checkout' where id = pay.id;
-    return jsonb_build_object('result', 'duplicate', 'subscription_id', null);
+  exception
+    when unique_violation then
+      update public.payments set refund_reason = 'duplicate_checkout' where id = pay.id;
+      return jsonb_build_object('result', 'duplicate', 'subscription_id', null);
+    when raise_exception then
+      -- The buyer joined or opened an agency meanwhile. Anything else fails
+      -- the whole call (the payment stays pending), so the webhook is retried.
+      if sqlerrm <> 'already_in_agency' then
+        raise;
+      end if;
+      update public.payments set refund_reason = 'duplicate_checkout' where id = pay.id;
+      return jsonb_build_object('result', 'duplicate', 'subscription_id', null);
   end;
 
   update public.payments set subscription_id = sub_id where id = pay.id;
@@ -289,12 +314,12 @@ $$;
 -- subscription, checks the change again (an upgrade from another tab may have
 -- just finished) and that no other upgrade of it is being charged, then
 -- inserts the pending payment. p_agency_name is required when the upgrade
--- opens a new agency (missing_agency_name); the payment's payer is then the
+-- opens a new agency (missing_agency_name, agency_name_too_long); the payment's payer is then the
 -- user until it's completed. Returns { subscription_id, amount, new_org_id,
 -- agency_name, payment_id }; payment_id is null when the amount is 0 (no
 -- charge: call complete_upgrade without a payment).
 drop function if exists public.start_upgrade(uuid, text);
-create function public.start_upgrade(p_user_id uuid, p_plan text, p_agency_name text default null) returns jsonb
+create or replace function public.start_upgrade(p_user_id uuid, p_plan text, p_agency_name text default null) returns jsonb
 language plpgsql security definer set search_path = ''
 as $$
 declare
@@ -316,10 +341,7 @@ begin
   perform public.assert_no_pending_upgrade(locked);
 
   if q.new_org_id is null then
-    new_name := nullif(trim(coalesce(p_agency_name, '')), '');
-    if new_name is null then
-      raise exception 'missing_agency_name';
-    end if;
+    new_name := public.clean_agency_name(p_agency_name);
   end if;
 
   if q.amount > 0 then
@@ -345,7 +367,7 @@ $$;
 -- refund_reason set, and must be refunded by hand. Called again, it answers
 -- 'duplicate' again.
 drop function if exists public.complete_upgrade(uuid, text, uuid, bigint);
-create function public.complete_upgrade(
+create or replace function public.complete_upgrade(
   p_user_id uuid, p_plan text, p_payment_id uuid, p_tranzaction_id bigint, p_agency_name text default null
 ) returns jsonb
 language plpgsql security definer set search_path = ''
@@ -443,6 +465,7 @@ $$;
 -- ===========================================================================
 
 revoke execute on function
+  public.clean_agency_name(text),
   public.open_agency(uuid, text),
   public.checkout_payer(uuid, text, text),
   public.start_upgrade(uuid, text, text),
