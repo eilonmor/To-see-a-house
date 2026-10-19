@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "to-see-a-house-dev",
+  "name": "to-see-a-house",
   "compatibility_date": "2026-10-18",
   "assets": {
     "directory": "./dist",
