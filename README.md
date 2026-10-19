@@ -192,7 +192,6 @@ and allows 5 tries.
 | `VITE_SUPABASE_URL`         | yes      | Project URL                                                  |
 | `VITE_SUPABASE_ANON_KEY`    | yes      | Anon key. Public by design; row-level security protects data |
 | `VITE_PROPERTY_SLUG`        | no       | The property shown at `/`                                    |
-| `SUPABASE_SERVICE_ROLE_KEY` | import   | Only for the one-time jsonbin import. Never prefix with `VITE_` |
 
 Edge function secrets (set with `npx supabase secrets set`, never in `.env`):
 
@@ -227,28 +226,7 @@ the visitor link from the property page.
 
 ---
 
-## 3. Import the old jsonbin.io bookings (once)
-
-If you still have bookings in the old jsonbin.io bin, copy them over:
-
-```bash
-# in .env.local: VITE_JSONBIN_BIN_ID, VITE_JSONBIN_ACCESS_KEY, SUPABASE_SERVICE_ROLE_KEY
-npm run import:jsonbin -- --email you@example.com --date 2026-10-12 --dry-run
-npm run import:jsonbin -- --email you@example.com --date 2026-10-12
-```
-
-`--date` is the viewing date the bookings belong to. It must be today or later,
-because the database refuses bookings on past days. The script creates the
-property and the day if they don't exist (default slots 17:00–18:30 every 10
-minutes; change with `--start`, `--end`, `--minutes`) and skips bookings that are
-already there, so it's safe to run again.
-
-Once the import is done, delete the bin on jsonbin.io: its access key is in
-every bundle the old version of the site shipped.
-
----
-
-## 4. Deploy
+## 3. Deploy
 
 The app is a static site. Vite reads the `VITE_*` variables **at build time**, so
 set them in your host's dashboard *before* building, and redeploy after changing them.
@@ -332,7 +310,6 @@ supabase/functions/            # edge functions: send-otp, verify-otp, guest-boo
                                # create-checkout, payment-webhook, change-plan, renew-subscriptions,
                                # delete-account
 supabase/functions/_shared/    # helpers; cardcom.ts (CardCom API), charge.ts (charges on the saved card)
-scripts/import-jsonbin.mjs     # one-time import of the old jsonbin.io data
 ```
 
 After changing the database schema, regenerate [`src/lib/database.types.ts`](src/lib/database.types.ts):
@@ -354,7 +331,7 @@ npx supabase gen types typescript --project-id <project-ref> > src/lib/database.
   in a token signed after a correct SMS code. Tokens can't be revoked one by one:
   a token stays valid for 30 days on the device that verified.
 - **Only mobile numbers (05X) can verify.** Visitors who booked earlier with
-  another number (a 9-digit landline imported from jsonbin.io, or a 10-digit
+  another number (a 9-digit landline from the old site, or a 10-digit
   07X number) can't receive an SMS code, so they can no longer view, change or
   cancel those bookings online. The owner can still release them in the property editor.
 - **The daily total of 1,000 codes is shared.** Someone sending requests from many
