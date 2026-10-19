@@ -23,6 +23,7 @@ import {
   type Plan,
   type Subscription,
 } from '../lib/billingStore'
+import type { Profile } from '../lib/auth'
 import { BookingError, formatDate, israelDate } from '../lib/bookingStore'
 import { usePolledData } from '../hooks/usePolledData'
 import { navigate } from '../hooks/useRoute'
@@ -39,7 +40,7 @@ import {
   useUpgradeConfirm,
 } from './BillingPage'
 import { useConfirm } from './ConfirmDialog'
-import { Alert, Button, Card, CopyButton, Field, Loading, Spinner } from './ui'
+import { Alert, Button, Card, CopyButton, Field, Link, Loading, Spinner } from './ui'
 
 /** /dashboard/agency: set up or join an agency, or manage the one the user is in. */
 export default function AgencyPage() {
@@ -251,7 +252,21 @@ function OpenAgency() {
   )
 }
 
-type AgencyData = { agency: Agency; members: Member[]; invites: Invite[] }
+/**
+ * seats: the agents the agency's plan includes (null: no running plan, or
+ * not the admin). With a downgrade scheduled, the smaller plan's, as in
+ * accept_agency_invite. upgradable: a plan with more seats is on sale.
+ */
+type AgencyData = { agency: Agency; members: Member[]; invites: Invite[]; seats: number | null; upgradable: boolean }
+
+async function fetchSeats(profile: Profile): Promise<Pick<AgencyData, 'seats' | 'upgradable'>> {
+  const [{ agency: sub }, plans] = await Promise.all([fetchMySubscription(profile), fetchPlans()])
+  const seatsOf = (code: string | null) => plans.find((p) => p.code === code)?.agentSeats ?? null
+  const current = sub && seatsOf(sub.planCode)
+  if (current == null) return { seats: null, upgradable: false }
+  const seats = Math.min(current, seatsOf(sub!.nextPlanCode) ?? current)
+  return { seats, upgradable: plans.some((p) => p.audience === 'agency' && p.agentSeats! > seats) }
+}
 
 function AgencyDetails({ orgId }: { orgId: string }) {
   const { t, lang } = useI18n()
@@ -262,13 +277,14 @@ function AgencyDetails({ orgId }: { orgId: string }) {
   const [actionError, setActionError] = useState('')
 
   const load = useCallback(async (): Promise<AgencyData> => {
-    const [agency, members, invites] = await Promise.all([
+    const [agency, members, invites, seats] = await Promise.all([
       fetchAgency(orgId),
       fetchMembers(),
       isAdmin ? fetchInvites(orgId) : Promise.resolve([]),
+      isAdmin ? fetchSeats(profile) : Promise.resolve({ seats: null, upgradable: false }),
     ])
-    return { agency, members, invites }
-  }, [orgId, isAdmin])
+    return { agency, members, invites, ...seats }
+  }, [orgId, isAdmin, profile])
   const { data, setData, loading, error, refresh } = usePolledData<AgencyData | null>(load, null)
 
   // Removed from the agency meanwhile: the profile no longer has it.
@@ -301,7 +317,9 @@ function AgencyDetails({ orgId }: { orgId: string }) {
     )
   }
 
-  const { agency, members, invites } = data
+  const { agency, members, invites, seats, upgradable } = data
+  // The database refuses joining beyond the plan's seats (agency_seat_limit).
+  const seatsFull = seats != null && members.filter((m) => m.role === 'agent').length >= seats
   const expires = (invite: Invite) =>
     t.agency.expires(formatDate(israelDate(new Date(invite.expiresAt)), lang, { day: 'numeric', month: 'long' }))
 
@@ -354,11 +372,27 @@ function AgencyDetails({ orgId }: { orgId: string }) {
               onClick={() => act('new-invite', null, t.agency.inviteError, async () => {
                 await createInvite()
               })}
-              disabled={busy !== null}
+              disabled={busy !== null || seatsFull}
             >
               {busy === 'new-invite' && <Spinner />} {t.agency.newInvite}
             </Button>
           </div>
+          {seatsFull && (
+            <div className="mt-4">
+              <Alert tone="info">
+                {t.agency.seatsFull(seats!)}{' '}
+                {upgradable ? (
+                  <Link href="/dashboard/billing" className="font-medium underline">
+                    {t.agency.upgradeForSeats}
+                  </Link>
+                ) : (
+                  <>
+                    {t.agency.contactForSeats} <ContactLink />
+                  </>
+                )}
+              </Alert>
+            </div>
+          )}
           {invites.length === 0 ? (
             <p className="mt-4 text-sm text-slate-400">{t.agency.noInvites}</p>
           ) : (
