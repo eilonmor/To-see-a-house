@@ -4,7 +4,7 @@ import { useRoute } from './hooks/useRoute'
 import { useSession } from './hooks/useSession'
 import { useI18n } from './i18n/I18nProvider'
 import Layout from './components/Layout'
-import Home from './components/Home'
+import Landing from './components/Landing'
 import BookingPage from './components/BookingPage'
 import LoginForm from './components/LoginForm'
 import SignupPage from './components/SignupPage'
@@ -47,13 +47,15 @@ export default function App() {
   const [homeSlug, setHomeSlug] = useState(linkSlug)
   if (linkSlug && linkSlug !== homeSlug) setHomeSlug(linkSlug)
 
+  // The landing page is full-width, with its own header and footer.
+  if (!slug && path === '/') return <Landing loggedIn={Boolean(session)} />
+
   // Login and sign-up are only for visitors without a session.
   const guestOnly = (page: ReactNode) =>
     session === undefined ? <Loading label={t.dashboard.loading} /> : session ? <Redirect to="/dashboard" /> : page
 
   let page: ReactNode
   if (slug) page = <BookingPage key={slug} slug={decodeSegment(slug)} />
-  else if (path === '/') page = <Home loggedIn={Boolean(session)} />
   else if (path === '/login') page = guestOnly(<LoginForm />)
   else if (path === '/signup') page = guestOnly(<SignupPage />)
   else if (path === '/forgot-password') page = <ForgotPassword />
