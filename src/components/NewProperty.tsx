@@ -1,5 +1,6 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { createProperty, type PropertyOwner } from '../lib/adminStore'
+import { BookingError } from '../lib/supabase'
 import { navigate } from '../hooks/useRoute'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { useAccount } from './AccountGate'
@@ -16,6 +17,8 @@ export default function NewProperty() {
   const [owner, setOwner] = useState<PropertyOwner>(profile.orgId ? 'agency' : 'me')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Agents and agencies need a running subscription to add properties.
+  const [needsPlan, setNeedsPlan] = useState(false)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -28,6 +31,7 @@ export default function NewProperty() {
       navigate(`/dashboard/p/${property.id}`, { replace: true })
     } catch (err) {
       setError(errorText(err, t))
+      setNeedsPlan(err instanceof BookingError && err.code === 'subscriptionRequired')
       setBusy(false)
     }
   }
@@ -87,7 +91,19 @@ export default function NewProperty() {
               <p className="mt-1.5 text-xs text-slate-500">{t.setup.ownerFinal}</p>
             </fieldset>
           )}
-          {error && <Alert>{error}</Alert>}
+          {error && (
+            <Alert>
+              {error}
+              {needsPlan && (
+                <>
+                  {' '}
+                  <Link href="/dashboard/billing" className="font-medium underline">
+                    {t.billing.choosePlan}
+                  </Link>
+                </>
+              )}
+            </Alert>
+          )}
           <Button type="submit" className="w-full" disabled={!values.title.trim() || busy}>
             {busy && <Spinner />} {t.setup.create}
           </Button>

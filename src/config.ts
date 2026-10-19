@@ -18,6 +18,9 @@ export const SUPABASE = {
   anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() || '',
 }
 
+// Where "contact us" links lead (billing page: more than 5 agents, payment problems).
+export const CONTACT_EMAIL = 'customer-service@netlink.world'
+
 // Optional: a property the root page (/) shows instead of the home page.
 // Every property is also reached through its own link: /p/<slug>.
 export const DEFAULT_PROPERTY_SLUG = import.meta.env.VITE_PROPERTY_SLUG?.trim() || ''

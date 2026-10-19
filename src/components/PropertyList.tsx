@@ -1,13 +1,11 @@
-import { useState } from 'react'
 import { fetchProperties, type PropertySummary } from '../lib/adminStore'
 import { pendingInvite } from '../lib/agencyStore'
-import { nextPropertyAllowedAt, upgradeToAgent } from '../lib/auth'
+import { nextPropertyAllowedAt } from '../lib/auth'
 import { formatDate, israelDate } from '../lib/bookingStore'
 import { usePolledData } from '../hooks/usePolledData'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { useAccount } from './AccountGate'
-import { useConfirm } from './ConfirmDialog'
-import { Alert, Button, Card, Link, Loading, Redirect, Spinner } from './ui'
+import { Alert, Card, Link, Loading, Redirect } from './ui'
 
 /** The dashboard home: every property the user manages. */
 export default function PropertyList() {
@@ -26,6 +24,9 @@ export default function PropertyList() {
     }
   }
 
+  // Agents and agencies need a subscription to add properties (also checked by the database).
+  const needsPlan = profile.role !== 'personal' && !profile.planActive
+
   // An agency invite opened before signing up (sign-up and Google land here).
   const invite = pendingInvite()
   if (invite) return <Redirect to={`/join/${encodeURIComponent(invite)}`} />
@@ -34,7 +35,7 @@ export default function PropertyList() {
     <div className="space-y-6 pt-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">{t.properties.title}</h1>
-        {!loading && !blockedReason && (
+        {!loading && !blockedReason && !needsPlan && (
           <Link
             href="/dashboard/new"
             className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
@@ -45,6 +46,7 @@ export default function PropertyList() {
       </div>
 
       {profile.role === 'personal' && <FreePlanNote />}
+      {needsPlan && <NoPlanNote agencyAgent={profile.role === 'agent' && profile.orgId !== null} />}
 
       {error != null && (
         <Alert>
@@ -57,7 +59,7 @@ export default function PropertyList() {
       ) : (
         <>
           {blockedReason && <Alert tone="info">{blockedReason}</Alert>}
-          {properties.length === 0 && error == null && !blockedReason && <Alert tone="info">{t.properties.empty}</Alert>}
+          {properties.length === 0 && error == null && !blockedReason && !needsPlan && <Alert tone="info">{t.properties.empty}</Alert>}
           <ul className="grid gap-4 sm:grid-cols-2">
             {properties.map((property) => (
               <li key={property.id}>
@@ -71,48 +73,39 @@ export default function PropertyList() {
   )
 }
 
-/** The free plan's limits, and the way out of them. */
+/** The free plan's limits, and the way out of them: an agent plan (billing page). */
 function FreePlanNote() {
   const { t } = useI18n()
-  const { reloadProfile } = useAccount()
-  const confirm = useConfirm()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-
-  async function upgrade() {
-    if (!(await confirm(t.properties.confirmUpgrade))) return
-    setBusy(true)
-    setError('')
-    try {
-      await upgradeToAgent()
-    } catch (err) {
-      setError(`${t.properties.upgradeError} ${errorText(err, t)}`)
-      setBusy(false)
-      return
-    }
-    try {
-      // The profile is now an agent's: this note goes away.
-      await reloadProfile()
-    } catch {
-      // Upgraded, but this page still shows the free plan. (Upgrading again is harmless.)
-      setError(t.account.reloadAfterAction)
-      setBusy(false)
-    }
-  }
-
   return (
-    <div className="space-y-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0 text-sm">
-          <p className="text-slate-600">{t.properties.freePlan}</p>
-          <p className="mt-0.5 text-slate-500">{t.properties.upgradeHelp}</p>
-        </div>
-        <Button variant="secondary" className="px-3! py-1.5! text-xs" onClick={upgrade} disabled={busy}>
-          {busy && <Spinner className="h-3 w-3" />} {t.properties.upgrade}
-        </Button>
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3">
+      <div className="min-w-0 text-sm">
+        <p className="text-slate-600">{t.properties.freePlan}</p>
+        <p className="mt-0.5 text-slate-500">{t.properties.upgradeHelp}</p>
       </div>
-      {error && <Alert>{error}</Alert>}
+      <Link
+        href="/dashboard/billing"
+        className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+      >
+        {t.properties.upgrade}
+      </Link>
     </div>
+  )
+}
+
+/**
+ * An agent or agency without a running subscription: existing properties
+ * keep working, new ones need a plan. Only the admin can buy the agency's.
+ */
+function NoPlanNote({ agencyAgent }: { agencyAgent: boolean }) {
+  const { t } = useI18n()
+  if (agencyAgent) return <Alert tone="info">{t.properties.agencyNeedsPlan}</Alert>
+  return (
+    <Alert tone="info">
+      {t.properties.needsPlan}{' '}
+      <Link href="/dashboard/billing" className="font-medium underline">
+        {t.billing.choosePlan}
+      </Link>
+    </Alert>
   )
 }
 

@@ -1,6 +1,7 @@
-// Agency side: creating an agency, invites, members, and which agents are
-// assigned to the agency's properties. Membership and roles change only
-// through database functions; row-level security limits the rest.
+// Agency side: invites, members, and which agents are assigned to the
+// agency's properties. An agency is opened by paying for its plan
+// (billingStore). Membership and roles change only through database
+// functions; row-level security limits the rest.
 
 import type { Role } from './auth'
 import { BookingError, run } from './supabase'
@@ -19,11 +20,6 @@ export async function fetchAgency(orgId: string): Promise<Agency> {
   const row = await run((db) => db.from('organizations').select('id, name').eq('id', orgId).maybeSingle())
   if (!row) throw new BookingError('agencyNotFound')
   return row
-}
-
-/** Creates an agency with the user as its admin. Returns its id. */
-export async function createAgency(name: string): Promise<string> {
-  return run((db) => db.rpc('create_agency', { p_name: name.trim() }))
 }
 
 export async function renameAgency(orgId: string, name: string): Promise<Agency> {

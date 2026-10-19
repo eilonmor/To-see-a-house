@@ -17,7 +17,17 @@ export type Profile = {
   phone: string
   orgId: string | null
   lastPropertyCreatedAt: string | null
+  /**
+   * A running subscription covers the user: their own or their agency's.
+   * Agents and agency admins need one to add properties (the database checks
+   * this too); personal users are on the free plan instead.
+   */
+  planActive: boolean
+  /** The agency's subscription is running (false outside an agency). */
+  agencyPlanActive: boolean
 }
+
+const isRunning = (status: string | null | undefined) => status === 'active' || status === 'past_due'
 
 export type SignUpDetails = { accountType: AccountType; fullName: string; phone: string; email: string; password: string }
 
@@ -96,9 +106,9 @@ export async function applyPendingAccountType(profile: Profile): Promise<boolean
 }
 
 /**
- * Free owner -> agent: unlimited properties and dates. Only from 'personal'
- * (agency members already are agents or admins). From phase 5 this needs a
- * subscription.
+ * Free owner -> agent. Only from 'personal' (agency members already are
+ * agents or admins). Used for Google sign-ups as an agent; the agent still
+ * needs a subscription (billing page) to add properties.
  */
 export async function upgradeToAgent(): Promise<void> {
   await run((db) => db.rpc('become_agent'))
@@ -130,7 +140,11 @@ export async function updatePassword(password: string): Promise<void> {
 
 export async function fetchProfile(userId: string): Promise<Profile> {
   const row = await run((db) =>
-    db.from('profiles').select('id, role, full_name, phone, org_id, last_property_created_at').eq('id', userId).maybeSingle(),
+    db
+      .from('profiles')
+      .select('id, role, full_name, phone, org_id, last_property_created_at, subscription_status, organizations(subscription_status)')
+      .eq('id', userId)
+      .maybeSingle(),
   )
   if (!row) throw new BookingError('profileNotFound')
   return {
@@ -140,6 +154,8 @@ export async function fetchProfile(userId: string): Promise<Profile> {
     phone: row.phone,
     orgId: row.org_id,
     lastPropertyCreatedAt: row.last_property_created_at,
+    planActive: isRunning(row.subscription_status) || isRunning(row.organizations?.subscription_status),
+    agencyPlanActive: isRunning(row.organizations?.subscription_status),
   }
 }
 
