@@ -7,7 +7,6 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "import:jsonbin": "node --env-file=.env.local scripts/import-jsonbin.mjs",
     "typecheck": "tsc"
   },
   "dependencies": {

@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "to-see-a-house-dev",
+  "compatibility_date": "2026-10-18",
+  "assets": {
+    "directory": "./dist",
+    // Path routes (/p/<slug>, /dashboard) are handled by the React app.
+    "not_found_handling": "single-page-application"
+  },
+  // Required by `npx wrangler preview` (non-production branch builds).
+  "previews": {}
+}

@@ -16,3 +16,12 @@ verify_jwt = false
 # Calendar apps can't log in: the secret token in the feed link is the credential.
 [functions.calendar-feed]
 verify_jwt = false
+
+# CardCom has no Supabase session: the webhook checks each payment with
+# CardCom's GetLpResult instead (docs/cardcom-integration.md, Task 3).
+[functions.payment-webhook]
+verify_jwt = false
+
+# Called by Supabase Cron, which sends the CRON_SECRET header instead of a session.
+[functions.renew-subscriptions]
+verify_jwt = false

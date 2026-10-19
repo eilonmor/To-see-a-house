@@ -233,6 +233,144 @@ export type Database = {
         Update: Partial<Database['public']['Tables']['calendar_feeds']['Insert']>
         Relationships: [Relationship<'calendar_feeds_user_id_fkey', 'user_id', 'profiles'>]
       }
+      // plans, subscriptions and payments (…_payments.sql) were added by hand
+      // in the generator's format; regenerating replaces them. The browser may
+      // select only some columns of subscriptions and payments (column grants):
+      // see src/lib/billingStore.ts.
+      plans: {
+        Row: {
+          code: string
+          audience: string
+          period: string
+          price: number
+          list_price: number
+          discount_percent: number
+          agent_seats: number | null
+          name_he: string
+          name_en: string
+          active: boolean
+        }
+        Insert: {
+          code: string
+          audience: string
+          period: string
+          price: number
+          list_price: number
+          discount_percent?: number
+          agent_seats?: number | null
+          name_he: string
+          name_en: string
+          active?: boolean
+        }
+        Update: Partial<Database['public']['Tables']['plans']['Insert']>
+        Relationships: []
+      }
+      subscriptions: {
+        Row: {
+          id: string
+          user_id: string | null
+          org_id: string | null
+          plan_code: string
+          price: number
+          period: string
+          status: Database['public']['Enums']['subscription_status']
+          current_period_start: string
+          current_period_end: string
+          cancel_at_period_end: boolean
+          failed_renewals: number
+          next_plan_code: string | null
+          ended_reason: string | null
+          created_at: string
+          canceled_at: string | null
+          cardcom_token: string | null
+          cardcom_token_card_year: number | null
+          cardcom_token_card_month: number | null
+          cardcom_token_approval_number: string | null
+          cardcom_token_card_owner_identity_number: string | null
+          cardcom_token_expires_on: string | null
+        }
+        Insert: {
+          id?: string
+          user_id?: string | null
+          org_id?: string | null
+          plan_code: string
+          price: number
+          period: string
+          status?: Database['public']['Enums']['subscription_status']
+          current_period_start: string
+          current_period_end: string
+          cancel_at_period_end?: boolean
+          failed_renewals?: number
+          next_plan_code?: string | null
+          ended_reason?: string | null
+          created_at?: string
+          canceled_at?: string | null
+          cardcom_token?: string | null
+          cardcom_token_card_year?: number | null
+          cardcom_token_card_month?: number | null
+          cardcom_token_approval_number?: string | null
+          cardcom_token_card_owner_identity_number?: string | null
+          cardcom_token_expires_on?: string | null
+        }
+        Update: Partial<Database['public']['Tables']['subscriptions']['Insert']>
+        Relationships: [
+          Relationship<'subscriptions_user_id_fkey', 'user_id', 'profiles'>,
+          Relationship<'subscriptions_org_id_fkey', 'org_id', 'organizations'>,
+        ]
+      }
+      payments: {
+        Row: {
+          id: string
+          subscription_id: string | null
+          user_id: string | null
+          org_id: string | null
+          bought_by: string | null
+          plan_code: string
+          amount: number
+          kind: string
+          status: string
+          created_at: string
+          paid_at: string | null
+          cardcom_low_profile_id: string | null
+          cardcom_operation: string | null
+          cardcom_tranzaction_id: number | null
+          cardcom_response_code: number | null
+          cardcom_description: string | null
+          cardcom_document_type: string | null
+          cardcom_document_number: number | null
+          refund_reason: string | null
+          refunded_at: string | null
+        }
+        Insert: {
+          id?: string
+          subscription_id?: string | null
+          user_id?: string | null
+          org_id?: string | null
+          bought_by?: string | null
+          plan_code: string
+          amount: number
+          kind: string
+          status?: string
+          created_at?: string
+          paid_at?: string | null
+          cardcom_low_profile_id?: string | null
+          cardcom_operation?: string | null
+          cardcom_tranzaction_id?: number | null
+          cardcom_response_code?: number | null
+          cardcom_description?: string | null
+          cardcom_document_type?: string | null
+          cardcom_document_number?: number | null
+          refund_reason?: string | null
+          refunded_at?: string | null
+        }
+        Update: Partial<Database['public']['Tables']['payments']['Insert']>
+        Relationships: [
+          Relationship<'payments_subscription_id_fkey', 'subscription_id', 'subscriptions'>,
+          Relationship<'payments_user_id_fkey', 'user_id', 'profiles'>,
+          Relationship<'payments_org_id_fkey', 'org_id', 'organizations'>,
+          Relationship<'payments_bought_by_fkey', 'bought_by', 'profiles'>,
+        ]
+      }
     }
     Views: { [_ in never]: never }
     Functions: {
@@ -247,7 +385,6 @@ export type Database = {
         Args: { p_from_day_id: string; p_to_day_id: string; p_slot: string; p_name: string; p_phone: string }
         Returns: Json
       }
-      create_agency: { Args: { p_name: string }; Returns: string }
       create_agency_invite: { Args: Record<PropertyKey, never>; Returns: string }
       preview_agency_invite: { Args: { p_code: string }; Returns: string }
       accept_agency_invite: { Args: { p_code: string }; Returns: string }
@@ -266,8 +403,15 @@ export type Database = {
       leave_agency: { Args: Record<PropertyKey, never>; Returns: undefined }
       remove_agent: { Args: { p_agent_id: string }; Returns: undefined }
       become_agent: { Args: Record<PropertyKey, never>; Returns: undefined }
+      delete_account_data: { Args: { p_user_id: string }; Returns: undefined }
       create_calendar_feed: { Args: Record<PropertyKey, never>; Returns: string }
       calendar_feed_events: { Args: { p_token: string }; Returns: Json }
+      plan_change_quote: {
+        Args: { p_plan: string }
+        Returns: { subscription_id: string; change: string; amount: number; new_org_id: string | null }[]
+      }
+      schedule_plan_change: { Args: { p_plan: string }; Returns: undefined }
+      set_subscription_renewal: { Args: { p_subscription_id: string; p_renew: boolean }; Returns: undefined }
     }
     Enums: {
       user_role: 'personal' | 'agent' | 'agency_admin'
