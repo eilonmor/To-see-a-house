@@ -16,7 +16,7 @@ import NewProperty from './components/NewProperty'
 import PropertyEditor from './components/PropertyEditor'
 import AgencyPage from './components/AgencyPage'
 import CalendarPage from './components/CalendarPage'
-import BillingPage from './components/BillingPage'
+import BillingPage, { PaymentHistoryPage } from './components/BillingPage'
 import JoinRoute from './components/JoinPage'
 import { Card, Link, Loading, Redirect } from './components/ui'
 
@@ -63,6 +63,7 @@ export default function App() {
   else if (path === '/dashboard/agency') page = <AccountGate><AgencyPage /></AccountGate>
   else if (path === '/dashboard/calendar') page = <AccountGate><CalendarPage /></AccountGate>
   else if (path === '/dashboard/billing') page = <AccountGate><BillingPage /></AccountGate>
+  else if (path === '/dashboard/billing/history') page = <AccountGate><PaymentHistoryPage /></AccountGate>
   else if (inviteCode) page = <JoinRoute key={inviteCode} code={decodeSegment(inviteCode)} />
   else if (editorId) page = <AccountGate><PropertyEditor key={editorId} propertyId={decodeSegment(editorId)} /></AccountGate>
   else page = <NotFound />

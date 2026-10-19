@@ -22,9 +22,10 @@ import { errorText, useI18n } from '../i18n/I18nProvider'
 import type { Lang } from '../i18n/translations'
 import { useAccount } from './AccountGate'
 import { useConfirm } from './ConfirmDialog'
-import { Alert, Button, Card, Loading, Spinner } from './ui'
+import { Alert, Button, Card, Link, Loading, Spinner } from './ui'
 
-type Billing = { plans: Plan[]; subs: MySubscriptions; payments: Payment[] }
+type Billing = { plans: Plan[]; subs: MySubscriptions }
+type History = { plans: Plan[]; payments: Payment[] }
 
 const PERIODS: Period[] = ['month', 'year']
 
@@ -57,9 +58,10 @@ const periodOver = (sub: Subscription) => sub.status === 'past_due' || Date.pars
 const planName = (plans: Plan[], code: string, lang: Lang) => plans.find((p) => p.code === code)?.name[lang] ?? code
 
 /**
- * /dashboard/billing: the user's plan (or the plans they may buy), and their
- * payments. Payment and subscription statuses are only read here; the
- * payment-webhook edge function changes them.
+ * /dashboard/billing: the user's plan (or the plans they may buy). Their
+ * payments are on PaymentHistoryPage, linked from here. Payment and
+ * subscription statuses are only read here; the payment-webhook edge
+ * function changes them.
  */
 export default function BillingPage() {
   const { t } = useI18n()
@@ -76,8 +78,8 @@ export default function BillingPage() {
   }, [])
 
   const load = useCallback(async (): Promise<Billing> => {
-    const [plans, subs, payments] = await Promise.all([fetchPlans(), fetchMySubscription(profile), fetchMyPayments()])
-    return { plans, subs, payments }
+    const [plans, subs] = await Promise.all([fetchPlans(), fetchMySubscription(profile)])
+    return { plans, subs }
   }, [profile])
   const { data, loading, error, refresh } = usePolledData<Billing | null>(load, null)
 
@@ -148,9 +150,47 @@ export default function BillingPage() {
           {audience && !data.subs[audience === 'agency' ? 'agency' : 'own'] && (
             <PlanPicker audience={audience} plans={data.plans.filter((p) => p.audience === audience)} />
           )}
-          <PaymentHistory payments={data.payments} plans={data.plans} />
+          <p className="text-sm">
+            <Link href="/dashboard/billing/history" className="font-medium text-indigo-600 hover:underline">
+              {t.billing.historyLink}
+            </Link>
+          </p>
         </>
       )}
+    </div>
+  )
+}
+
+/** /dashboard/billing/history: the user's payments, linked from the billing page only. */
+export function PaymentHistoryPage() {
+  const { t } = useI18n()
+  const load = useCallback(async (): Promise<History> => {
+    const [plans, payments] = await Promise.all([fetchPlans(), fetchMyPayments()])
+    return { plans, payments }
+  }, [])
+  const { data, loading, error, refresh } = usePolledData<History | null>(load, null)
+
+  return (
+    <div className="space-y-6 pt-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">{t.billing.historyTitle}</h1>
+        <Link href="/dashboard/billing" className="text-sm font-medium text-indigo-600 hover:underline">
+          {t.billing.backToBilling}
+        </Link>
+      </div>
+
+      {error != null && (
+        <Alert>
+          {t.billing.historyLoadError} {errorText(error, t)}
+          {!data && (
+            <Button variant="secondary" className="ms-2 px-3! py-1! text-xs" onClick={refresh}>
+              {t.billing.retry}
+            </Button>
+          )}
+        </Alert>
+      )}
+
+      {!data ? loading && <Loading label={t.dashboard.loading} /> : <PaymentHistory payments={data.payments} plans={data.plans} />}
     </div>
   )
 }
@@ -387,7 +427,7 @@ function PlanChange({
       await action()
     } catch (err) {
       setError(err)
-      // The card may have been charged: the history shows the payment.
+      // The card may have been charged: the plan may have changed (the history shows the payment).
       if (isChargeIssue(err)) onChanged()
     } finally {
       setBusy(null)
@@ -571,11 +611,10 @@ function PaymentHistory({ payments, plans }: { payments: Payment[]; plans: Plan[
 
   return (
     <Card>
-      <h2 className="text-lg font-semibold text-slate-900">{t.billing.historyTitle}</h2>
       {shown.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">{t.billing.noPayments}</p>
+        <p className="text-sm text-slate-500">{t.billing.noPayments}</p>
       ) : (
-        <ul className="mt-4 divide-y divide-slate-100">
+        <ul className="-my-3 divide-y divide-slate-100">
           {shown.map((p) => (
             <li key={p.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 text-sm">
               <div className="min-w-0">
