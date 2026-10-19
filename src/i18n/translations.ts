@@ -339,6 +339,7 @@ const he = {
     keepSeats: (n: number) => `להישאר עם ${n} מתווכים`,
     changeError: 'לא ניתן לשנות את המנוי:',
     cancelRenewal: 'ביטול החידוש',
+    cancelRenewalConfirmLabel: 'הבנתי, בטל את המנוי',
     cancelRenewalConfirm: (date: string) =>
       `המנוי לא יתחדש. הוא יישאר פעיל עד ${date}, ואז יסתיים. לא יינתן החזר על התקופה הנוכחית. הדירות והביקורים הקיימים יישמרו.`,
     cancelRenewalAgency: 'בסיום המנוי, המתווכים בסוכנות לא יוכלו להוסיף דירות חדשות.',
@@ -865,6 +866,7 @@ const en: Translation = {
     downgradeScheduled: (n: number, date: string) => `On ${date} the plan switches to ${n} agents.`,
     keepSeats: (n: number) => `Keep ${n} agents`,
     cancelRenewal: 'Cancel renewal',
+    cancelRenewalConfirmLabel: 'Got it, cancel my plan',
     cancelRenewalConfirm: (date: string) =>
       `The plan won't renew. It stays active until ${date}, then ends. The current period isn't refunded. Your properties and visits are kept.`,
     cancelRenewalAgency: "When the plan ends, the agency's agents can't add new properties.",

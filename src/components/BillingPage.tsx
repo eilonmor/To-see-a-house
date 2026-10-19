@@ -341,7 +341,7 @@ function RenewalControl({
             // The agency's agents are covered by this plan.
             sub.orgId ? t.billing.cancelRenewalAgency : '',
           ].join(' '),
-          { tone: 'danger', confirmLabel: t.billing.cancelRenewal },
+          { tone: 'danger', confirmLabel: t.billing.cancelRenewalConfirmLabel },
         )
     if (!ok) return
     setBusy(true)
