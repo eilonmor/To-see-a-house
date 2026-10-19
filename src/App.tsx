@@ -18,6 +18,7 @@ import AgencyPage from './components/AgencyPage'
 import CalendarPage from './components/CalendarPage'
 import BillingPage, { PaymentHistoryPage } from './components/BillingPage'
 import JoinRoute from './components/JoinPage'
+import AccountPage from './components/AccountPage'
 import { Card, Link, Loading, Redirect } from './components/ui'
 
 // A malformed link (e.g. "/p/%") can't be decoded; the raw text then simply
@@ -64,6 +65,7 @@ export default function App() {
   else if (path === '/dashboard/calendar') page = <AccountGate><CalendarPage /></AccountGate>
   else if (path === '/dashboard/billing') page = <AccountGate><BillingPage /></AccountGate>
   else if (path === '/dashboard/billing/history') page = <AccountGate><PaymentHistoryPage /></AccountGate>
+  else if (path === '/dashboard/account') page = <AccountGate><AccountPage /></AccountGate>
   else if (inviteCode) page = <JoinRoute key={inviteCode} code={decodeSegment(inviteCode)} />
   else if (editorId) page = <AccountGate><PropertyEditor key={editorId} propertyId={decodeSegment(editorId)} /></AccountGate>
   else page = <NotFound />

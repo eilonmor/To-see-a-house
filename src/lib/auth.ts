@@ -3,7 +3,7 @@
 
 import type { Database } from './database.types'
 import { phoneKey } from './bookingStore'
-import { BookingError, run } from './supabase'
+import { BookingError, callFunction, run } from './supabase'
 
 export type Role = Database['public']['Enums']['user_role']
 
@@ -116,6 +116,17 @@ export async function upgradeToAgent(): Promise<void> {
 
 export async function signOut(): Promise<void> {
   await run(async (db) => ({ data: null, ...(await db.auth.signOut()) }))
+}
+
+/**
+ * Deletes the account for good (the delete-account edge function): stops the
+ * renewal of the user's (and an agency admin's agency's) subscription, with
+ * no refund, deletes an admin's agency, then the user. Then signs out.
+ */
+export async function deleteAccount(): Promise<void> {
+  await callFunction<{ deleted: true }>('delete-account', { confirm: 'delete' })
+  // The user is gone: only the local session is left to clear.
+  await signOut().catch(() => {})
 }
 
 /** Emails a link to /reset-password, where the user picks a new password. */

@@ -72,7 +72,7 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
    [`supabase/migrations/`](supabase/migrations/) into **SQL Editor** and run them
    in order (`…_init.sql`, `…_accounts.sql`, `…_phone_10_digits.sql`, `…_guest_otp.sql`,
    `…_agencies.sql`, `…_calendar_feed.sql`, `…_booking_notes.sql`, `…_payments.sql`,
-   `…_agency_checkout.sql`), or with the Supabase CLI.
+   `…_agency_checkout.sql`, `…_delete_account.sql`), or with the Supabase CLI.
    Hold back `…_payments.sql` until the payment functions are deployed (step 11),
    and apply it last: from then on, agents and agencies can't add properties or
    accept agents without a subscription. It is safe to run again after it changes,
@@ -154,7 +154,16 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
     successful payments. The plans and their prices are rows in `public.plans`;
     change them in the Table Editor, no deploy needed. Running subscriptions
     keep the price they were bought at.
-12. **Schedule the renewals** (after deploying `renew-subscriptions`). Set the secret,
+12. **Deploy account deletion** (after `…_delete_account.sql`). The Account page
+    (`/dashboard/account`) deletes the user through it. It stops the renewal of the
+    user's plan (and, for an agency admin, the agency's plan) with
+    `set_subscription_renewal`, with no refund. Then it deletes an admin's agency,
+    then the user. The user's payment rows are deleted with them; CardCom keeps its
+    own documents.
+    ```bash
+    npx supabase functions deploy delete-account
+    ```
+13. **Schedule the renewals** (after deploying `renew-subscriptions`). Set the secret,
     then in **Integrations → Cron → Create job** add a daily HTTP request:
     ```bash
     npx supabase secrets set CRON_SECRET=$(openssl rand -base64 48)
@@ -313,12 +322,14 @@ src/
     ├── JoinPage.tsx           # /join/<code>: accept an agency invite
     ├── CalendarPage.tsx       # /dashboard/calendar: calendar subscription link
     ├── BillingPage.tsx        # /dashboard/billing: plans, checkout, plan changes, payments
+    ├── AccountPage.tsx        # /dashboard/account: account details, delete the account
     ├── ConfirmDialog.tsx      # styled confirm dialog: await confirm(message)
     ├── DayForm.tsx            # add or edit a viewing day
     └── InstructionsEditor.tsx # post-booking instructions
 supabase/migrations/           # database schema, rules and row-level security
 supabase/functions/            # edge functions: send-otp, verify-otp, guest-bookings, calendar-feed,
-                               # create-checkout, payment-webhook, change-plan, renew-subscriptions
+                               # create-checkout, payment-webhook, change-plan, renew-subscriptions,
+                               # delete-account
 supabase/functions/_shared/    # helpers; cardcom.ts (CardCom API), charge.ts (charges on the saved card)
 scripts/import-jsonbin.mjs     # one-time import of the old jsonbin.io data
 ```

@@ -200,6 +200,31 @@ const he = {
     loadError: 'לא ניתן לטעון את החשבון:',
     reloadError: 'לא ניתן לטעון מחדש את פרטי החשבון, ולכן ייתכן שהדף לא מעודכן. רעננו את הדף:',
     reloadAfterAction: 'הפעולה בוצעה, אבל לא ניתן לטעון מחדש את פרטי החשבון. רעננו את הדף כדי לראות את השינוי.',
+    nav: 'חשבון',
+    title: 'החשבון שלי',
+    name: 'שם',
+    email: 'אימייל',
+    type: 'סוג החשבון',
+    deleteTitle: 'מחיקת החשבון',
+    deleteIntro: 'מחיקת החשבון היא סופית: החשבון, הדירות, ימי הביקור וההרשמות של האורחים יימחקו, ואי אפשר לשחזר אותם.',
+    deleteButton: 'מחיקת החשבון',
+    continue: 'המשך',
+    deleteConfirm: 'למחוק את החשבון? כל הדירות, ימי הביקור וההרשמות של האורחים יימחקו לצמיתות, ולא ניתן יהיה לשחזר אותם.',
+    deleteSubscription: (date: string) =>
+      `יש לך מנוי בתשלום. עם מחיקת החשבון נבטל את חידוש המנוי, כך שלא יתבצע חיוב נוסף. לא יינתן החזר על תשלומים שכבר בוצעו, גם לא על התקופה הנוכחית (עד ${date}).`,
+    deleteAgencySubscription: (date: string) =>
+      `לסוכנות יש מנוי בתשלום. עם מחיקת החשבון נבטל את חידוש המנוי של הסוכנות, כך שלא יתבצע חיוב נוסף. לא יינתן החזר על תשלומים שכבר בוצעו, גם לא על התקופה הנוכחית (עד ${date}).`,
+    deleteSubscriptionLabel: 'הבנתי, אין החזר',
+    deleteAgency: (name: string) =>
+      `אתם מנהלי הסוכנות "${name}". היא תימחק יחד עם החשבון: כל הדירות של הסוכנות, ימי הביקור וההרשמות יימחקו, והמתווכים בסוכנות יוצאו ממנה.`,
+    deleteAgencyLabel: 'הבנתי, מחק גם את הסוכנות',
+    typeWord: 'delete',
+    typePrompt: 'כדי לאשר, הקלידו',
+    deleteForever: 'מחיקת החשבון לצמיתות',
+    deleteLast: 'זו ההזדמנות האחרונה: למחוק את החשבון לצמיתות? אי אפשר לבטל את זה.',
+    deleting: 'מוחק את החשבון…',
+    deleteError: 'לא ניתן למחוק את החשבון:',
+    subscriptionLoadError: 'לא ניתן לבדוק את המנוי, ולכן אי אפשר למחוק את החשבון כרגע:',
   },
   agency: {
     nav: 'הסוכנות',
@@ -551,6 +576,8 @@ const he = {
     upgradeInProgress: () => 'יש שינוי מנוי שעדיין בבדיקה. נסו שוב בעוד כמה דקות; אם זה חוזר, צרו איתנו קשר.',
     renewalInProgress: () => 'חיוב החידוש של המנוי עדיין בטיפול. נסו שוב מחר; אם זה חוזר, צרו איתנו קשר.',
     coveredByAgency: () => 'המנוי של הסוכנות מכסה אותך, ולכן אין צורך לחדש את המנוי הזה.',
+    paymentInProgress: () => 'יש תשלום שעדיין בטיפול. נסו שוב בעוד שעה; אם זה חוזר, צרו איתנו קשר.',
+    renewalNotStopped: () => 'לא הצלחנו לבטל את חידוש המנוי, ולכן החשבון לא נמחק. נסו שוב; אם זה חוזר, צרו איתנו קשר.',
   },
 }
 
@@ -745,6 +772,33 @@ const en: Translation = {
     loadError: 'Could not load your account:',
     reloadError: "Your account details couldn't be reloaded, so this page may be out of date. Refresh the page:",
     reloadAfterAction: "That worked, but your account details couldn't be reloaded. Refresh the page to see the change.",
+    nav: 'Account',
+    title: 'My account',
+    name: 'Name',
+    email: 'Email',
+    type: 'Account type',
+    deleteTitle: 'Delete account',
+    deleteIntro:
+      "Deleting your account is final: your account, properties, visit days and guest bookings are deleted, and they can't be restored.",
+    deleteButton: 'Delete account',
+    continue: 'Continue',
+    deleteConfirm:
+      "Delete your account? All your properties, visit days and guest bookings will be deleted for good, and they can't be restored.",
+    deleteSubscription: (date: string) =>
+      `You have a paid plan. Deleting your account cancels its renewal, so you won't be charged again. Payments already made are not refunded, including the current period (until ${date}).`,
+    deleteAgencySubscription: (date: string) =>
+      `Your agency has a paid plan. Deleting your account cancels the agency plan's renewal, so it won't be charged again. Payments already made are not refunded, including the current period (until ${date}).`,
+    deleteSubscriptionLabel: 'Got it, no refund',
+    deleteAgency: (name: string) =>
+      `You're the admin of the agency "${name}". It will be deleted with your account: all the agency's properties, visit days and bookings are deleted, and its agents are removed from it.`,
+    deleteAgencyLabel: 'Got it, delete the agency too',
+    typeWord: 'delete',
+    typePrompt: 'To confirm, type',
+    deleteForever: 'Delete my account forever',
+    deleteLast: "Last chance: delete your account forever? This can't be undone.",
+    deleting: 'Deleting your account…',
+    deleteError: "Couldn't delete your account:",
+    subscriptionLoadError: "Couldn't check your plan, so your account can't be deleted right now:",
   },
   agency: {
     nav: 'Agency',
@@ -1100,6 +1154,8 @@ const en: Translation = {
     upgradeInProgress: () => 'A plan change is still being confirmed. Try again in a few minutes; if this keeps happening, contact us.',
     renewalInProgress: () => "The plan's renewal charge is still being processed. Try again tomorrow; if this keeps happening, contact us.",
     coveredByAgency: () => "Your agency's plan covers you, so this plan doesn't need to renew.",
+    paymentInProgress: () => 'A payment is still being processed. Try again in an hour; if this keeps happening, contact us.',
+    renewalNotStopped: () => "We couldn't cancel your plan's renewal, so your account wasn't deleted. Try again; if this keeps happening, contact us.",
   },
 }
 

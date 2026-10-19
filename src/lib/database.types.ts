@@ -403,6 +403,7 @@ export type Database = {
       leave_agency: { Args: Record<PropertyKey, never>; Returns: undefined }
       remove_agent: { Args: { p_agent_id: string }; Returns: undefined }
       become_agent: { Args: Record<PropertyKey, never>; Returns: undefined }
+      delete_account_data: { Args: { p_user_id: string }; Returns: undefined }
       create_calendar_feed: { Args: Record<PropertyKey, never>; Returns: string }
       calendar_feed_events: { Args: { p_token: string }; Returns: Json }
       plan_change_quote: {
