@@ -37,7 +37,7 @@ const CONFIRM_TIMEOUT_MS = 60_000
 // paying: it never finishes, so the history doesn't show it.
 const ABANDONED_CHECKOUT_MS = 60 * 60_000
 
-const formatPrice = (amount: number, lang: Lang) =>
+export const formatPrice = (amount: number, lang: Lang) =>
   new Intl.NumberFormat(lang === 'en' ? 'en-IL' : 'he-IL', {
     style: 'currency',
     currency: 'ILS',
@@ -45,15 +45,18 @@ const formatPrice = (amount: number, lang: Lang) =>
     maximumFractionDigits: 2,
   }).format(amount)
 
-const longDate = (iso: string, lang: Lang) =>
+export const longDate = (iso: string, lang: Lang) =>
   formatDate(israelDate(new Date(iso)), lang, { day: 'numeric', month: 'long', year: 'numeric' })
 
 /** A plan-change error after which the card may have been charged: checked or refunded by hand. */
-const isChargeIssue = (err: unknown) =>
+export const isChargeIssue = (err: unknown) =>
   err instanceof BookingError && ['paymentUnconfirmed', 'upgradeRefundDue', 'upgradeInProgress'].includes(err.code)
 
 /** Its period has ended but it's still running: past due, or waiting for the daily renewal run. */
 const periodOver = (sub: Subscription) => sub.status === 'past_due' || Date.parse(sub.currentPeriodEnd) <= Date.now()
+
+/** An agent plan that can move to an agency plan of its period (plan_change_check checks this again). */
+export const canMoveToAgency = (sub: Subscription) => sub.status === 'active' && !sub.cancelAtPeriodEnd && !periodOver(sub)
 
 const planName = (plans: Plan[], code: string, lang: Lang) => plans.find((p) => p.code === code)?.name[lang] ?? code
 
@@ -66,10 +69,11 @@ const planName = (plans: Plan[], code: string, lang: Lang) => plans.find((p) => 
 export default function BillingPage() {
   const { t } = useI18n()
   const { profile, reloadProfile } = useAccount()
-  // CardCom sends the browser back with ?result=success or ?result=failed, and &payment=<id>.
-  const [{ result, paymentId }] = useState(() => {
+  // CardCom sends the browser back with ?result=success or ?result=failed, and
+  // &payment=<id> (and &agency=new when the payment opens an agency).
+  const [{ result, paymentId, newAgency }] = useState(() => {
     const params = new URLSearchParams(window.location.search)
-    return { result: params.get('result'), paymentId: params.get('payment') }
+    return { result: params.get('result'), paymentId: params.get('payment'), newAgency: params.get('agency') === 'new' }
   })
 
   useEffect(() => {
@@ -105,20 +109,13 @@ export default function BillingPage() {
     <div className="space-y-6 pt-6">
       <h1 className="text-2xl font-bold tracking-tight text-slate-900">{t.billing.title}</h1>
 
-      {result === 'success' && paymentId && <CheckoutResult paymentId={paymentId} onConfirmed={onConfirmed} />}
+      {result === 'success' && paymentId && (
+        <CheckoutResult paymentId={paymentId} newAgency={newAgency} onConfirmed={onConfirmed} />
+      )}
       {result === 'failed' && <Alert>{t.billing.failed}</Alert>}
       {upgraded && <Alert tone="info">{t.billing.upgraded}</Alert>}
 
-      {error != null && (
-        <Alert>
-          {t.billing.loadError} {errorText(error, t)}
-          {!data && (
-            <Button variant="secondary" className="ms-2 px-3! py-1! text-xs" onClick={refresh}>
-              {t.billing.retry}
-            </Button>
-          )}
-        </Alert>
-      )}
+      {error != null && <LoadErrorAlert prefix={t.billing.loadError} error={error} onRetry={data ? undefined : refresh} />}
 
       {!data ? (
         loading && <Loading label={t.dashboard.loading} />
@@ -150,6 +147,15 @@ export default function BillingPage() {
           {audience && !data.subs[audience === 'agency' ? 'agency' : 'own'] && (
             <PlanPicker audience={audience} plans={data.plans.filter((p) => p.audience === audience)} />
           )}
+          {/* An agency is opened, and its plan bought, on the agency page. */}
+          {!profile.orgId && (
+            <Alert tone="info">
+              {data.subs.own && canMoveToAgency(data.subs.own) ? t.billing.openAgencyPromoUpgrade : t.billing.openAgencyPromo}{' '}
+              <Link href="/dashboard/agency" className="font-medium underline">
+                {t.billing.openAgency}
+              </Link>
+            </Alert>
+          )}
           <p className="text-sm">
             <Link href="/dashboard/billing/history" className="font-medium text-indigo-600 hover:underline">
               {t.billing.historyLink}
@@ -179,16 +185,7 @@ export function PaymentHistoryPage() {
         </Link>
       </div>
 
-      {error != null && (
-        <Alert>
-          {t.billing.historyLoadError} {errorText(error, t)}
-          {!data && (
-            <Button variant="secondary" className="ms-2 px-3! py-1! text-xs" onClick={refresh}>
-              {t.billing.retry}
-            </Button>
-          )}
-        </Alert>
-      )}
+      {error != null && <LoadErrorAlert prefix={t.billing.historyLoadError} error={error} onRetry={data ? undefined : refresh} />}
 
       {!data ? loading && <Loading label={t.dashboard.loading} /> : <PaymentHistory payments={data.payments} plans={data.plans} />}
     </div>
@@ -196,7 +193,16 @@ export function PaymentHistoryPage() {
 }
 
 /** "Confirming your payment…" until the checkout CardCom sent the browser back from is no longer pending. */
-function CheckoutResult({ paymentId, onConfirmed }: { paymentId: string; onConfirmed: () => void }) {
+function CheckoutResult({
+  paymentId,
+  newAgency,
+  onConfirmed,
+}: {
+  paymentId: string
+  /** The payment opens an agency. */
+  newAgency: boolean
+  onConfirmed: () => void
+}) {
   const { t } = useI18n()
   const [state, setState] = useState<'confirming' | 'paid' | 'failed' | 'refund' | 'timeout'>('confirming')
   // Called once; a newer callback (after the profile reloads) doesn't restart polling.
@@ -244,7 +250,20 @@ function CheckoutResult({ paymentId, onConfirmed }: { paymentId: string; onConfi
       </Alert>
     )
   }
-  if (state === 'paid') return <Alert tone="info">{t.billing.paid}</Alert>
+  if (state === 'paid') {
+    // The agency was opened with it, and its agents are next.
+    if (newAgency) {
+      return (
+        <Alert tone="info">
+          {t.billing.agencyPaid}{' '}
+          <Link href="/dashboard/agency" className="font-medium underline">
+            {t.billing.toAgency}
+          </Link>
+        </Alert>
+      )
+    }
+    return <Alert tone="info">{t.billing.paid}</Alert>
+  }
   if (state === 'refund') return <Alert>{t.billing.checkoutRefundDue}</Alert>
   if (state === 'failed') return <Alert>{t.billing.failed}</Alert>
   return (
@@ -404,6 +423,7 @@ function PlanChange({
 }) {
   const { t, lang } = useI18n()
   const confirm = useConfirm()
+  const confirmUpgrade = useUpgradeConfirm()
   // The plan being changed to (or the current plan, while keeping it).
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<unknown>(null)
@@ -436,15 +456,7 @@ function PlanChange({
 
   const upgrade = (plan: Plan) =>
     act(plan.code, async () => {
-      const quote = await quotePlanChange(plan.code)
-      if (quote.change !== 'upgrade') throw new BookingError('planChangeNotAllowed')
-      const price = formatPrice(plan.price, lang)
-      const per = t.billing.perPeriod[plan.period]
-      const message =
-        quote.amount > 0
-          ? t.billing.upgradeConfirm(formatPrice(quote.amount, lang), end, price, per)
-          : t.billing.upgradeFree(end, price, per)
-      if (!(await confirm(message, { confirmLabel: t.billing.upgradeConfirmLabel }))) return
+      if (!(await confirmUpgrade(plan, sub, t.billing.upgradeConfirmLabel))) return
       await upgradePlan(plan.code, lang)
       onUpgraded()
     })
@@ -493,18 +505,137 @@ function PlanChange({
           ))
         )}
       </div>
-      {error != null && (
-        <Alert>
-          {t.billing.changeError} {errorText(error, t)}
-          {isChargeIssue(error) && (
-            <>
-              {' '}
-              <ContactLink />
-            </>
-          )}
-        </Alert>
-      )}
+      {error != null && <PaymentErrorAlert prefix={t.billing.changeError} error={error} />}
     </div>
+  )
+}
+
+/**
+ * Quotes moving `sub` to `plan` (an upgrade) and asks to confirm the charge
+ * now and the price from the next renewal. Resolves false if declined;
+ * raises planChangeNotAllowed if it isn't an upgrade.
+ */
+export function useUpgradeConfirm() {
+  const { t, lang } = useI18n()
+  const confirm = useConfirm()
+  return useCallback(
+    async (plan: Plan, sub: Subscription, confirmLabel: string): Promise<boolean> => {
+      const quote = await quotePlanChange(plan.code)
+      if (quote.change !== 'upgrade') throw new BookingError('planChangeNotAllowed')
+      const end = longDate(sub.currentPeriodEnd, lang)
+      const price = formatPrice(plan.price, lang)
+      const per = t.billing.perPeriod[plan.period]
+      const message =
+        quote.amount > 0
+          ? t.billing.upgradeConfirm(formatPrice(quote.amount, lang), end, price, per)
+          : t.billing.upgradeFree(end, price, per)
+      return confirm(message, { confirmLabel })
+    },
+    [t, lang, confirm],
+  )
+}
+
+/** A load error, with a retry button when there's nothing to show. */
+export function LoadErrorAlert({ prefix, error, onRetry }: { prefix: string; error: unknown; onRetry?: () => void }) {
+  const { t } = useI18n()
+  return (
+    <Alert>
+      {prefix} {errorText(error, t)}
+      {onRetry && (
+        <Button variant="secondary" className="ms-2 px-3! py-1! text-xs" onClick={onRetry}>
+          {t.billing.retry}
+        </Button>
+      )}
+    </Alert>
+  )
+}
+
+/** A checkout or plan-change error, with "contact us" when it's ours to sort out (the card may have been charged). */
+export function PaymentErrorAlert({ prefix, error }: { prefix?: string; error: unknown }) {
+  const { t } = useI18n()
+  const contact = isChargeIssue(error) || (error instanceof BookingError && error.code === 'checkoutUnavailable')
+  return (
+    <Alert>
+      {prefix && `${prefix} `}
+      {errorText(error, t)}
+      {contact && (
+        <>
+          {' '}
+          <ContactLink />
+        </>
+      )}
+    </Alert>
+  )
+}
+
+/** Monthly / yearly. */
+export function PeriodToggle({ value, onChange }: { value: Period; onChange: (period: Period) => void }) {
+  const { t } = useI18n()
+  return (
+    <div className="inline-flex rounded-xl border border-slate-300 bg-white p-0.5 text-sm">
+      {PERIODS.map((p) => (
+        <button
+          key={p}
+          type="button"
+          aria-pressed={value === p}
+          onClick={() => onChange(p)}
+          className={`rounded-lg px-3 py-1.5 font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+            value === p ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          {t.billing.period[p]}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** A plan on sale (an item of a `<ul>`): name, discount, price, seats, and its button. */
+export function PlanOption({
+  plan,
+  label,
+  busy,
+  disabled,
+  onSelect,
+  children,
+}: {
+  plan: Plan
+  label: string
+  busy: boolean
+  disabled: boolean
+  onSelect: () => void
+  /** Shown above the button. */
+  children?: ReactNode
+}) {
+  const { t, lang } = useI18n()
+  return (
+    <li className="flex flex-col rounded-2xl border border-slate-200 p-5">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="font-semibold text-slate-900">{plan.name[lang]}</h3>
+        {plan.discountPercent > 0 && (
+          <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
+            {t.billing.discount(plan.discountPercent)}
+          </span>
+        )}
+      </div>
+      <p className="mt-3">
+        <span className="text-2xl font-bold text-slate-900">{formatPrice(plan.price, lang)}</span>{' '}
+        <span className="text-sm text-slate-500">{t.billing.perPeriod[plan.period]}</span>
+      </p>
+      {plan.listPrice > plan.price && (
+        <p className="text-sm text-slate-400">
+          <s>{t.billing.listPrice(formatPrice(plan.listPrice, lang))}</s>
+        </p>
+      )}
+      {plan.agentSeats && <p className="mt-2 text-sm text-slate-600">{t.billing.seats(plan.agentSeats)}</p>}
+      {children}
+      {/* Bottom-aligned, so the buttons of plans side by side line up. */}
+      <div className="mt-auto pt-4">
+        <Button className="w-full" onClick={onSelect} disabled={disabled}>
+          {busy && <Spinner />} {label}
+        </Button>
+      </div>
+    </li>
   )
 }
 
@@ -535,48 +666,19 @@ function PlanPicker({ audience, plans }: { audience: 'agent' | 'agency'; plans: 
           <h2 className="text-lg font-semibold text-slate-900">{t.billing.chooseTitle}</h2>
           <p className="mt-1 text-sm text-slate-500">{audience === 'agency' ? t.billing.chooseAgency : t.billing.chooseAgent}</p>
         </div>
-        <div className="inline-flex rounded-xl border border-slate-300 bg-white p-0.5 text-sm">
-          {PERIODS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              aria-pressed={period === p}
-              onClick={() => setPeriod(p)}
-              className={`rounded-lg px-3 py-1.5 font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-                period === p ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              {t.billing.period[p]}
-            </button>
-          ))}
-        </div>
+        <PeriodToggle value={period} onChange={setPeriod} />
       </div>
 
       <ul className="grid gap-4 sm:grid-cols-2">
         {shown.map((plan) => (
-          <li key={plan.code} className="flex flex-col rounded-2xl border border-slate-200 p-5">
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="font-semibold text-slate-900">{plan.name[lang]}</h3>
-              {plan.discountPercent > 0 && (
-                <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
-                  {t.billing.discount(plan.discountPercent)}
-                </span>
-              )}
-            </div>
-            <p className="mt-3">
-              <span className="text-2xl font-bold text-slate-900">{formatPrice(plan.price, lang)}</span>{' '}
-              <span className="text-sm text-slate-500">{t.billing.perPeriod[plan.period]}</span>
-            </p>
-            {plan.listPrice > plan.price && (
-              <p className="text-sm text-slate-400">
-                <s>{t.billing.listPrice(formatPrice(plan.listPrice, lang))}</s>
-              </p>
-            )}
-            {plan.agentSeats && <p className="mt-2 text-sm text-slate-600">{t.billing.seats(plan.agentSeats)}</p>}
-            <Button className="mt-4 w-full" onClick={() => pay(plan.code)} disabled={busy !== null}>
-              {busy === plan.code && <Spinner />} {t.billing.pay}
-            </Button>
-          </li>
+          <PlanOption
+            key={plan.code}
+            plan={plan}
+            label={t.billing.pay}
+            busy={busy === plan.code}
+            disabled={busy !== null}
+            onSelect={() => pay(plan.code)}
+          />
         ))}
       </ul>
 
@@ -585,17 +687,7 @@ function PlanPicker({ audience, plans }: { audience: 'agent' | 'agency'; plans: 
           {t.billing.moreAgents} <ContactLink />
         </p>
       )}
-      {error != null && (
-        <Alert>
-          {t.billing.payError} {errorText(error, t)}
-          {error instanceof BookingError && error.code === 'checkoutUnavailable' && (
-            <>
-              {' '}
-              <ContactLink />
-            </>
-          )}
-        </Alert>
-      )}
+      {error != null && <PaymentErrorAlert prefix={t.billing.payError} error={error} />}
       <p className="text-xs text-slate-500">{t.billing.payNote}</p>
     </Card>
   )
@@ -646,7 +738,7 @@ function PaymentHistory({ payments, plans }: { payments: Payment[]; plans: Plan[
   )
 }
 
-function ContactLink() {
+export function ContactLink() {
   const { t } = useI18n()
   return (
     <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium text-indigo-600 hover:underline">

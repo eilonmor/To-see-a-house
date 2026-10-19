@@ -299,22 +299,32 @@ In `public.accept_agency_invite()` (`20261004000000_init.sql`; redefine it with
 
 ### 2.7 Who may buy what
 
-`public.checkout_payer(p_user_id uuid, p_plan text)`, `security definer`, service
-role only, called by `create-checkout` with the user's id, returns
-`(payer_user_id, payer_org_id)` or raises:
+An agency is opened by paying for its plan: there is no agency without a
+plan, so nobody becomes an agency admin who can't add properties or leave
+(`20261019000000_agency_checkout.sql`; the app can't call `create_agency()`).
+
+`public.checkout_payer(p_user_id uuid, p_plan text, p_agency_name text default
+null)`, `security definer`, service role only, called by `create-checkout` with
+the user's id, returns `(payer_user_id, payer_org_id, agency_name)` or raises:
 
 - `agent_*`: the caller is `personal` (no agency) or an `agent` without an agency →
   payer is the user. An agent inside an agency is covered by the agency →
   `plan_not_allowed`.
-- `agency_*`: the caller is `agency_admin` → payer is their agency. Anyone else →
-  `plan_not_allowed` (create the agency first, from the agency page).
+- `agency_*`:
+  - the caller is `agency_admin` (an agency whose plan ended) → payer is their agency;
+  - the caller has no agency → a new agency: payer is the user, `agency_name` the
+    trimmed `p_agency_name` (empty → `missing_agency_name`, over 100 characters →
+    `agency_name_too_long`). `complete_checkout` opens the agency when the payment
+    succeeds, and `SuccessRedirectUrl` gets `&agency=new` so the billing page says so;
+  - an agent inside an agency → `plan_not_allowed`.
 - The payer already has an `active` or `past_due` subscription → `already_subscribed`.
-- `agency_*` and the caller still has their own agent subscription that could be
-  upgraded (from before creating the agency: `active`, not cancelling, same
-  period) → `use_upgrade`: the app offers the upgrade (Task 6) instead, so they
-  don't pay twice for the same period. If it can't be upgraded (cancelling,
-  `past_due`, or the other period), the checkout goes ahead, and
-  `complete_checkout` stops the renewal of the own subscription.
+  Not checked for a new agency: the buyer's own agent plan runs out instead (below).
+- `agency_*` and the caller has their own agent subscription that could be
+  upgraded (`active`, not cancelling, same period, period not ended) → `use_upgrade`: the app
+  offers the upgrade (Task 6) instead, so they don't pay twice for the same
+  period. If it can't be upgraded (cancelling, `past_due`, or the other period),
+  the checkout goes ahead, and `complete_checkout` stops the renewal of the own
+  subscription.
 - Plan missing or not active → `plan_not_allowed`.
 
 ## Task 3: `payment-webhook` edge function
@@ -362,6 +372,12 @@ frontend runs on localhost; the functions run on Supabase).
    token strings: CardCom pads some with spaces (`"040617649 "`, `"12345 "`), and
    the ID number is sent back on every renewal. It:
    - marks the payment `paid`, with `paid_at` and `cardcom_tranzaction_id`;
+   - for a new agency (`payments.agency_name` set): opens it with
+     `open_agency()` (the buyer becomes its `agency_admin`) and moves the payment
+     to it (`user_id` null, `org_id` the agency). If the buyer joined or opened
+     an agency meanwhile (`already_in_agency`), it's a `duplicate` (below); any
+     other error fails the call, the payment stays `pending`, and the webhook
+     answers 500 so CardCom sends it again;
    - creates the subscription (`active`, `price` = the payment's amount, `period`
      from the plan, `current_period_start` = now, `current_period_end` = now + 1
      month or 1 year) with the `TokenInfo` fields, and links the payment to it;
@@ -373,7 +389,8 @@ frontend runs on localhost; the functions run on Supabase).
    - returns `{ result: 'paid' | 'duplicate' | 'already_done', subscription_id }`.
      `already_done`: a concurrent webhook finished first, so nothing changed.
      `duplicate`: the payer meanwhile got another running subscription (two tabs,
-     a payment page left open, or an upgrade). The payment is still paid with
+     a payment page left open, or an upgrade), or the buyer of a new agency is
+     in an agency already. The payment is still paid with
      `refund_reason = 'duplicate_checkout'`, no second subscription is created, and
      a repeated call answers `duplicate` again;
      `console.error('[cardcom] duplicate subscription payment', paymentId)`. It's
@@ -388,9 +405,12 @@ frontend runs on localhost; the functions run on Supabase).
 `POST { plan }` with the user's Supabase session (`verify_jwt = true`; read the
 user from the `Authorization` header with `admin.auth.getUser(jwt)`).
 
-1. `rpc('checkout_payer', { p_user_id, p_plan })` (Task 2.7) → payer, or its error code.
+1. `rpc('checkout_payer', { p_user_id, p_plan, p_agency_name })` (Task 2.7) →
+   payer, or its error code. `p_agency_name`: the body's `agency_name`, sent by
+   the agency page.
 2. Read the plan's price; read the buyer's `full_name`, `phone` and email.
-3. Insert a `payments` row: `pending`, `kind = 'checkout'`, amount = plan price.
+3. Insert a `payments` row: `pending`, `kind = 'checkout'`, amount = plan price,
+   and `agency_name` for a new agency.
 4. `cardcomPost('LowProfile/Create', …)`:
    ```json
    {
@@ -413,7 +433,7 @@ user from the `Authorization` header with `admin.auth.getUser(jwt)`).
      "Document": {
        "DocumentTypeToCreate": "Auto",
        "IsAllowEditDocument": true,
-       "Name": "<agency name for agency plans, else full_name; email if empty>",
+       "Name": "<agency name (or the new agency's) for agency plans, else full_name; email if empty>",
        "Email": "<email>",
        "IsSendByEmail": true,
        "Mobile": "<phone>",
@@ -456,7 +476,8 @@ user from the `Authorization` header with `admin.auth.getUser(jwt)`).
 - `src/components/BillingPage.tsx` at `/dashboard/billing` (route in `App.tsx`,
   inside `AccountGate`):
   - Without a subscription: the plans the user may buy (agent plans for personal
-    users and independent agents, agency plans for agency admins), monthly/yearly,
+    users and independent agents, agency plans for admins of an agency whose
+    plan ended), monthly/yearly,
     price with the list price struck out and the discount, "includes 2 agents" /
     "includes 5 agents", and "more than 5 agents? contact us". The pay button
     calls `startCheckout` and then `window.location.assign(url)`.
@@ -473,8 +494,18 @@ user from the `Authorization` header with `admin.auth.getUser(jwt)`).
     - An agency on large sees "Switch to 2 agents at the next renewal" (and
       "Keep 5 agents" while it's scheduled).
   - `?result=success`: "confirming your payment…" until the latest payment is no
-    longer `pending` (poll every 3 seconds, up to a minute), then "paid" or "failed".
-    `?result=failed`: "the payment didn't go through".
+    longer `pending` (poll every 3 seconds, up to a minute), then "paid" (for an
+    agency plan: "your agency is set up", with a link to the agency page) or
+    "failed". `?result=failed`: "the payment didn't go through".
+  - Users outside an agency see "Running an office? Set up an agency" with a link
+    to the agency page.
+- `src/components/AgencyPage.tsx`, without an agency: **Set up an agency** is
+  buying its plan, on one card: the agency's name, monthly/yearly, and the 2- and
+  5-agent plans side by side (price, list price, discount, seats). The button calls
+  `startCheckout(plan, lang, agencyName)`. An agent whose own plan is `active`, not
+  cancelling, and of the chosen period sees "it moves to the agency, and you pay
+  only the difference": the button reads `quotePlanChange` and confirms, then calls
+  `upgradePlan(plan, lang, agencyName)` (Task 6), with no payment page.
 - Replace the free **Upgrade to agent** button in `PropertyList.tsx` with a link to
   `/dashboard/billing`. `become_agent()` stays for Google sign-ups, but such an
   agent still can't add properties until they subscribe.
@@ -610,7 +641,8 @@ monthly ↔ yearly is refused with `plan_change_not_allowed`.
 
 | From (current subscription)             | To                           | Kind      | Payer after         |
 | --------------------------------------- | ---------------------------- | --------- | ------------------- |
-| `agent_*` of a user who is now an agency admin | `agency_small_*` or `agency_large_*` | upgrade   | the agency (moves from the user) |
+| `agent_*` of a user outside an agency    | `agency_small_*` or `agency_large_*` | upgrade   | a new agency, opened by the upgrade (moves from the user) |
+| `agent_*` of an admin whose agency's plan ended | `agency_small_*` or `agency_large_*` | upgrade   | the agency (moves from the user) |
 | `agency_small_*`                        | `agency_large_*`             | upgrade   | the agency          |
 | `agency_large_*`                        | `agency_small_*`             | downgrade | the agency          |
 
@@ -626,8 +658,9 @@ monthly ↔ yearly is refused with `plan_change_not_allowed`.
 - `public.plan_change_check(p_user_id uuid, p_plan text)`, service role only:
   validates the change (6.1) and returns `(subscription_id, change, amount,
   new_org_id)`: `change` is `'upgrade'` or `'downgrade'`, `new_org_id` the agency
-  that pays afterwards. An agency admin's agency subscription is used if there is
-  one, else their own. For an upgrade:
+  that pays afterwards (null: a new agency, opened by `complete_upgrade`). An
+  agency admin's agency subscription is used if there is one, else their own. For
+  an upgrade:
 
   ```
   amount = round((new_plan.price − subscription.price)
@@ -638,36 +671,42 @@ monthly ↔ yearly is refused with `plan_change_not_allowed`.
   `active = true`.
 - `public.plan_change_quote(p_plan text)`, granted to `authenticated`: the same,
   for `auth.uid()`. The billing page calls it for the confirm dialog.
-- `public.start_upgrade(p_user_id uuid, p_plan text)`, service role only, one
-  transaction, before the charge: runs `plan_change_check`, locks the subscription
-  (`for update`), runs the check again (an upgrade from another tab may have just
-  finished, so a second tab is refused **before** its card is charged), raises
-  `upgrade_in_progress` if the subscription has a `pending` upgrade payment, then
-  inserts the pending payment. Returns `{ subscription_id, amount, new_org_id,
-  payment_id }`; `payment_id` is null when the amount is 0.
+- `public.start_upgrade(p_user_id uuid, p_plan text, p_agency_name text default
+  null)`, service role only, one transaction, before the charge: runs
+  `plan_change_check`, locks the subscription (`for update`), runs the check again
+  (an upgrade from another tab may have just finished, so a second tab is refused
+  **before** its card is charged), raises `upgrade_in_progress` if the subscription
+  has a `pending` upgrade payment, and `missing_agency_name` for a new agency
+  without a name, then inserts the pending payment. Returns `{ subscription_id,
+  amount, new_org_id, agency_name, payment_id }`; `payment_id` is null when the
+  amount is 0.
 - While a subscription has a `pending` upgrade payment (being charged, or never
   confirmed), nothing may change what it pays for: stopping the renewal
   (`set_subscription_renewal(…, false)`), another upgrade, and a free upgrade all
   raise `upgrade_in_progress`. (`schedule_plan_change` doesn't need it: downgrades
   are only from large, upgrades only to large.)
 - `public.complete_upgrade(p_user_id uuid, p_plan text, p_payment_id uuid,
-  p_tranzaction_id bigint)`, service role only, one transaction. `p_payment_id` is
-  null when the amount was 0 (there is no `payments` row). It:
+  p_tranzaction_id bigint, p_agency_name text default null)`, service role only,
+  one transaction. `p_payment_id` is null when the amount was 0 (there is no
+  `payments` row). It:
   - refuses (`plan_change_not_allowed`) a `p_plan` other than the payment's
     `plan_code`, so finishing a payment by hand can't give a bigger plan;
   - marks the payment `paid`, with `paid_at` and `cardcom_tranzaction_id`;
-  - re-checks the change and locks the old subscription (`for update`);
+  - re-checks the change (for the same agency the payment names, or a new one)
+    and locks the old subscription (`for update`);
+  - for a new agency: opens it with `open_agency()`, named by the payment's
+    `agency_name` (else `p_agency_name`);
   - sets the old subscription `canceled`, `ended_reason = 'upgraded'`;
   - creates a new subscription for the agency: the new plan, `price` = the new
     plan's current price, the **same** `current_period_start` / `current_period_end`,
     `active`, and the old one's token columns copied over. For agent → agency, the
     agent's saved card becomes the agency's card;
-  - links the payment to the new subscription;
+  - links the payment to the new subscription (and to the agency, for a new one);
   - calls `sync_subscription_status` for the old payer and the new one;
   - returns `{ result: 'upgraded' | 'duplicate' | 'already_done', subscription_id }`.
     `duplicate`: the change isn't allowed any more (the agency's own checkout was
-    paid meanwhile, the plan was deactivated, or the subscription was changed by
-    hand). The payment is still paid, with `refund_reason = 'duplicate_upgrade'`,
+    paid meanwhile, the buyer of a new agency joined or opened one, the plan was
+    deactivated, or the subscription was changed by hand). The payment is still paid, with `refund_reason = 'duplicate_upgrade'`,
     and a repeated call answers `duplicate` again;
     `console.error('[cardcom] duplicate upgrade payment', paymentId)` from the edge
     function, for a manual refund. Without a payment, the error code is raised
@@ -680,23 +719,26 @@ monthly ↔ yearly is refused with `plan_change_not_allowed`.
 
 ### 6.3 `change-plan` (upgrades only)
 
-`POST { plan, lang }` with the user's session (`verify_jwt = true`, user from the
-`Authorization` header, as in `create-checkout`).
+`POST { plan, lang, agency_name? }` with the user's session (`verify_jwt = true`,
+user from the `Authorization` header, as in `create-checkout`). `agency_name`:
+the new agency's, when an agent outside an agency moves to an agency plan.
 
-1. `rpc('start_upgrade', { p_user_id, p_plan })` (6.2) → the pending payment, or
-   its error code: a downgrade → `plan_change_not_allowed` (the app calls
-   `schedule_plan_change` for those); another upgrade of it pending →
-   `upgrade_in_progress`. The payment row: `pending`, `kind = 'upgrade'`,
+1. `rpc('start_upgrade', { p_user_id, p_plan, p_agency_name })` (6.2) → the
+   pending payment, or its error code: a downgrade → `plan_change_not_allowed`
+   (the app calls `schedule_plan_change` for those); another upgrade of it pending
+   → `upgrade_in_progress`. The payment row: `pending`, `kind = 'upgrade'`,
    `subscription_id` = the **old** subscription (`complete_upgrade` checks it, then
-   moves it to the new one), `org_id` = `new_org_id`, `bought_by` = the user,
+   moves it to the new one), `org_id` = `new_org_id` (for a new agency: `user_id` =
+   the user and `agency_name`, until it's completed), `bought_by` = the user,
    `plan_code` = the new plan, `amount`.
-2. Amount 0 (no `payment_id`): `complete_upgrade` without a payment, return
-   `{ upgraded: true }`.
+2. Amount 0 (no `payment_id`): `complete_upgrade` without a payment (with
+   `p_agency_name`), return `{ upgraded: true }`.
 3. Otherwise `cardcomCharge(…)` (Task 1) with the old subscription's token, the
    same body as a renewal (Task 5) with `Amount` = the prorated amount,
    `Document.Language` = `lang`, `ExternalUniqTranId` = the payment id, and a
    product description like "<new plan name> (until <date>)". The payer is the
-   agency (`new_org_id`). If anything fails before the charge is sent, the payment
+   agency (`new_org_id`); for a new agency, the user, with the document in the
+   agency's name. If anything fails before the charge is sent, the payment
    is marked `failed`.
 4. `ResponseCode` = 0: save the response fields on the payment, then
    `complete_upgrade`; return `{ upgraded: true }`. On `duplicate` (refund due,
@@ -793,19 +835,26 @@ Terminal `1000`, API name `CardTest1994`, and CardCom's published test card numb
    a while; `?result=failed` says the payment didn't go through. Nothing else
    changes. (See "A declined card, then a retry on the same page".)
 3. Send the same webhook twice → the second one changes nothing.
-4. Agency admin buys `agency_small_yearly` → invite 2 agents (OK) and a 3rd
-   (`agency_seat_limit`). Before buying, joining fails with `subscription_required`.
+4. Personal user sets up an agency on the agency page with `agency_small_yearly`
+   → CardCom → paid: the agency exists, the user is its `agency_admin`, the
+   payment moved to the agency (`org_id`), and the billing page says the agency is
+   set up. Leaving CardCom's page without paying → no agency, and the user is still
+   `personal`. Invite 2 agents (OK) and a 3rd (`agency_seat_limit`). An admin whose
+   agency's plan ended: joining fails with `subscription_required`.
 5. Renewal: set `current_period_end` to the past in SQL, call `renew-subscriptions`
    with the cron header → a new paid payment, the period moves forward by one period.
 6. Renewal failure (change the token in SQL) → `past_due`; 3 runs → `canceled`;
    adding a property → `subscription_required`; existing properties still work.
 7. Cancel renewal → the period runs out → `canceled` (`ended_reason = 'canceled'`)
    with no charge.
-8. Agent with `agent_monthly` creates an agency → buying an agency plan gives
-   `use_upgrade` → upgrade to `agency_small_monthly`: the payment amount is
-   (60 − 23) × days left ÷ days in period; the agent's subscription is `canceled`
-   with `ended_reason = 'upgraded'`; the agency's has the same period end and the
-   same token; the profile and the organization mirror columns are right.
+8. Agent with `agent_monthly` sets up an agency with `agency_small_monthly` → no
+   payment page: the confirm dialog shows (60 − 23) × days left ÷ days in period,
+   charged on the saved card; the agency is opened with the agent as its admin; the
+   agent's subscription is `canceled` with `ended_reason = 'upgraded'`; the
+   agency's has the same period end and the same token; the profile and the
+   organization mirror columns are right. Calling `create-checkout` for it instead
+   gives `use_upgrade`. With `agency_small_yearly` instead: CardCom's page, and the
+   agent's own plan stops renewing.
 9. `agency_small_*` → `agency_large_*`: prorated charge, then 5 agents can join.
    `agent_monthly` → `agency_small_yearly` → `plan_change_not_allowed`.
 10. Upgrade with a declined card (change the token in SQL) →
