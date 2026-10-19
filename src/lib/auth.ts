@@ -119,9 +119,10 @@ export async function signOut(): Promise<void> {
 }
 
 /**
- * Deletes the account for good (the delete-account edge function): stops the
- * renewal of the user's (and an agency admin's agency's) subscription, with
- * no refund, deletes an admin's agency, then the user. Then signs out.
+ * Deletes the account for good (the delete-account edge function), in one
+ * transaction: the user's (and an agency admin's agency's) subscription ends
+ * with it, with no refund, and an admin's agency is deleted. Then signs out.
+ * Raises payment_in_progress while a payment may still be charged.
  */
 export async function deleteAccount(): Promise<void> {
   await callFunction<{ deleted: true }>('delete-account', { confirm: 'delete' })

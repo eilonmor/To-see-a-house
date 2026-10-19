@@ -576,8 +576,8 @@ const he = {
     upgradeInProgress: () => 'יש שינוי מנוי שעדיין בבדיקה. נסו שוב בעוד כמה דקות; אם זה חוזר, צרו איתנו קשר.',
     renewalInProgress: () => 'חיוב החידוש של המנוי עדיין בטיפול. נסו שוב מחר; אם זה חוזר, צרו איתנו קשר.',
     coveredByAgency: () => 'המנוי של הסוכנות מכסה אותך, ולכן אין צורך לחדש את המנוי הזה.',
-    paymentInProgress: () => 'יש תשלום שעדיין בטיפול. נסו שוב בעוד שעה; אם זה חוזר, צרו איתנו קשר.',
-    renewalNotStopped: () => 'לא הצלחנו לבטל את חידוש המנוי, ולכן החשבון לא נמחק. נסו שוב; אם זה חוזר, צרו איתנו קשר.',
+    paymentInProgress: () =>
+      'יש תשלום שעדיין בטיפול (או שהתחלתם תשלום ב-24 השעות האחרונות), ולכן החשבון לא נמחק. נסו שוב מחר; אם זה חוזר, צרו איתנו קשר.',
   },
 }
 
@@ -1154,8 +1154,8 @@ const en: Translation = {
     upgradeInProgress: () => 'A plan change is still being confirmed. Try again in a few minutes; if this keeps happening, contact us.',
     renewalInProgress: () => "The plan's renewal charge is still being processed. Try again tomorrow; if this keeps happening, contact us.",
     coveredByAgency: () => "Your agency's plan covers you, so this plan doesn't need to renew.",
-    paymentInProgress: () => 'A payment is still being processed. Try again in an hour; if this keeps happening, contact us.',
-    renewalNotStopped: () => "We couldn't cancel your plan's renewal, so your account wasn't deleted. Try again; if this keeps happening, contact us.",
+    paymentInProgress: () =>
+      "A payment is still being processed (or you started one in the last 24 hours), so your account wasn't deleted. Try again tomorrow; if this keeps happening, contact us.",
   },
 }
 

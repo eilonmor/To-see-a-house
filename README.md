@@ -155,11 +155,12 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
     change them in the Table Editor, no deploy needed. Running subscriptions
     keep the price they were bought at.
 12. **Deploy account deletion** (after `…_delete_account.sql`). The Account page
-    (`/dashboard/account`) deletes the user through it. It stops the renewal of the
-    user's plan (and, for an agency admin, the agency's plan) with
-    `set_subscription_renewal`, with no refund. Then it deletes an admin's agency,
-    then the user. The user's payment rows are deleted with them; CardCom keeps its
-    own documents.
+    (`/dashboard/account`) deletes the user through it, in one transaction
+    (`delete_account_data`). The user's plan (and, for an agency admin, the agency's
+    plan) stops renewing and ends with the account, with no refund. An admin's agency
+    is deleted too. Deletion is refused while a renewal or upgrade is being charged,
+    or for 24 hours after a checkout starts. The user's payment rows are deleted
+    with them; CardCom keeps its own documents.
     ```bash
     npx supabase functions deploy delete-account
     ```
