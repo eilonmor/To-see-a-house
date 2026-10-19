@@ -1,6 +1,8 @@
-// POST { plan, lang } with the user's session → { url } of CardCom's payment
-// page for that plan. The price and the payer come from the database, never
-// from the browser. The payment is marked paid only by payment-webhook.
+// POST { plan, lang, agency_name? } with the user's session → { url } of
+// CardCom's payment page for that plan. The price and the payer come from the
+// database, never from the browser. The payment is marked paid only by
+// payment-webhook. agency_name: an agency plan bought by a user outside an
+// agency opens an agency with this name once it's paid.
 // See docs/cardcom-integration.md, Task 4.
 //
 // Needs the secrets APP_URL (where CardCom sends the browser back) and the
@@ -26,10 +28,10 @@ Deno.serve(
     const supabaseUrl = Deno.env.get('SUPABASE_URL')?.replace(/\/+$/, '')
     if (!appUrl || !supabaseUrl) throw new Error('APP_URL and SUPABASE_URL must be set')
 
-    const [payer] = await rpc<{ payer_user_id: string | null; payer_org_id: string | null }[]>('checkout_payer', {
-      p_user_id: user.id,
-      p_plan: plan,
-    })
+    const [payer] = await rpc<{ payer_user_id: string | null; payer_org_id: string | null; agency_name: string | null }[]>(
+      'checkout_payer',
+      { p_user_id: user.id, p_plan: plan, p_agency_name: str(body.agency_name) || null },
+    )
     if (!payer) throw new Error('checkout_payer returned no row')
 
     const [planRes, profileRes, orgRes] = await Promise.all([
@@ -47,7 +49,7 @@ Deno.serve(
     const email = user.email ?? ''
     const fullName = profile.full_name.trim()
     const phone = profile.phone.trim()
-    const documentName = (orgRes.data?.name.trim() || fullName) || email
+    const documentName = (orgRes.data?.name.trim() || payer.agency_name || fullName) || email
 
     const payment = must(
       await admin
@@ -60,6 +62,7 @@ Deno.serve(
           amount,
           kind: 'checkout',
           status: 'pending',
+          agency_name: payer.agency_name,
         })
         .select('id')
         .single(),

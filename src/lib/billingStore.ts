@@ -146,9 +146,11 @@ export async function fetchMyPayments(): Promise<Payment[]> {
 /**
  * Starts paying for `plan`: returns the address of CardCom's payment page,
  * in `lang`. CardCom then sends the browser back to /dashboard/billing.
+ * `agencyName`: an agency plan bought outside an agency opens an agency with
+ * this name once it's paid.
  */
-export async function startCheckout(plan: string, lang: Lang): Promise<string> {
-  const { url } = await callFunction<{ url: string }>('create-checkout', { plan, lang })
+export async function startCheckout(plan: string, lang: Lang, agencyName?: string): Promise<string> {
+  const { url } = await callFunction<{ url: string }>('create-checkout', { plan, lang, agency_name: agencyName?.trim() })
   return url
 }
 
@@ -169,10 +171,11 @@ export async function quotePlanChange(plan: string): Promise<PlanChangeQuote> {
 /**
  * Upgrades now: the change-plan edge function charges the prorated amount
  * on the saved card (CardCom is called only there) and switches the plan.
- * The receipt is in `lang`.
+ * The receipt is in `lang`. `agencyName`: an agent outside an agency moving
+ * to an agency plan opens an agency with this name.
  */
-export async function upgradePlan(plan: string, lang: Lang): Promise<void> {
-  await callFunction<{ upgraded: true }>('change-plan', { plan, lang })
+export async function upgradePlan(plan: string, lang: Lang, agencyName?: string): Promise<void> {
+  await callFunction<{ upgraded: true }>('change-plan', { plan, lang, agency_name: agencyName?.trim() })
 }
 
 /**

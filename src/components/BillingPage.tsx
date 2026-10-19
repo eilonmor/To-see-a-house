@@ -37,7 +37,7 @@ const CONFIRM_TIMEOUT_MS = 60_000
 // paying: it never finishes, so the history doesn't show it.
 const ABANDONED_CHECKOUT_MS = 60 * 60_000
 
-const formatPrice = (amount: number, lang: Lang) =>
+export const formatPrice = (amount: number, lang: Lang) =>
   new Intl.NumberFormat(lang === 'en' ? 'en-IL' : 'he-IL', {
     style: 'currency',
     currency: 'ILS',
@@ -45,11 +45,11 @@ const formatPrice = (amount: number, lang: Lang) =>
     maximumFractionDigits: 2,
   }).format(amount)
 
-const longDate = (iso: string, lang: Lang) =>
+export const longDate = (iso: string, lang: Lang) =>
   formatDate(israelDate(new Date(iso)), lang, { day: 'numeric', month: 'long', year: 'numeric' })
 
 /** A plan-change error after which the card may have been charged: checked or refunded by hand. */
-const isChargeIssue = (err: unknown) =>
+export const isChargeIssue = (err: unknown) =>
   err instanceof BookingError && ['paymentUnconfirmed', 'upgradeRefundDue', 'upgradeInProgress'].includes(err.code)
 
 /** Its period has ended but it's still running: past due, or waiting for the daily renewal run. */
@@ -105,7 +105,9 @@ export default function BillingPage() {
     <div className="space-y-6 pt-6">
       <h1 className="text-2xl font-bold tracking-tight text-slate-900">{t.billing.title}</h1>
 
-      {result === 'success' && paymentId && <CheckoutResult paymentId={paymentId} onConfirmed={onConfirmed} />}
+      {result === 'success' && paymentId && (
+        <CheckoutResult paymentId={paymentId} plans={data?.plans ?? []} onConfirmed={onConfirmed} />
+      )}
       {result === 'failed' && <Alert>{t.billing.failed}</Alert>}
       {upgraded && <Alert tone="info">{t.billing.upgraded}</Alert>}
 
@@ -149,6 +151,15 @@ export default function BillingPage() {
           )}
           {audience && !data.subs[audience === 'agency' ? 'agency' : 'own'] && (
             <PlanPicker audience={audience} plans={data.plans.filter((p) => p.audience === audience)} />
+          )}
+          {/* An agency is opened, and its plan bought, on the agency page. */}
+          {!profile.orgId && (
+            <Alert tone="info">
+              {data.subs.own ? t.billing.openAgencyPromoUpgrade : t.billing.openAgencyPromo}{' '}
+              <Link href="/dashboard/agency" className="font-medium underline">
+                {t.billing.openAgency}
+              </Link>
+            </Alert>
           )}
           <p className="text-sm">
             <Link href="/dashboard/billing/history" className="font-medium text-indigo-600 hover:underline">
@@ -196,9 +207,10 @@ export function PaymentHistoryPage() {
 }
 
 /** "Confirming your payment…" until the checkout CardCom sent the browser back from is no longer pending. */
-function CheckoutResult({ paymentId, onConfirmed }: { paymentId: string; onConfirmed: () => void }) {
+function CheckoutResult({ paymentId, plans, onConfirmed }: { paymentId: string; plans: Plan[]; onConfirmed: () => void }) {
   const { t } = useI18n()
   const [state, setState] = useState<'confirming' | 'paid' | 'failed' | 'refund' | 'timeout'>('confirming')
+  const [planCode, setPlanCode] = useState<string | null>(null)
   // Called once; a newer callback (after the profile reloads) doesn't restart polling.
   const confirmed = useRef(onConfirmed)
   useEffect(() => {
@@ -217,6 +229,7 @@ function CheckoutResult({ paymentId, onConfirmed }: { paymentId: string; onConfi
         if (payment && payment.status !== 'pending') {
           // Paid, but the payer already had a plan: no second one, refunded by hand.
           setState(payment.refund ? 'refund' : payment.status)
+          setPlanCode(payment.planCode)
           if (payment.status === 'paid') confirmed.current()
           return
         }
@@ -244,7 +257,20 @@ function CheckoutResult({ paymentId, onConfirmed }: { paymentId: string; onConfi
       </Alert>
     )
   }
-  if (state === 'paid') return <Alert tone="info">{t.billing.paid}</Alert>
+  if (state === 'paid') {
+    // An agency plan: the agency was opened with it, and its agents are next.
+    if (plans.find((p) => p.code === planCode)?.audience === 'agency') {
+      return (
+        <Alert tone="info">
+          {t.billing.agencyPaid}{' '}
+          <Link href="/dashboard/agency" className="font-medium underline">
+            {t.billing.toAgency}
+          </Link>
+        </Alert>
+      )
+    }
+    return <Alert tone="info">{t.billing.paid}</Alert>
+  }
   if (state === 'refund') return <Alert>{t.billing.checkoutRefundDue}</Alert>
   if (state === 'failed') return <Alert>{t.billing.failed}</Alert>
   return (
@@ -508,6 +534,77 @@ function PlanChange({
   )
 }
 
+/** Monthly / yearly. */
+export function PeriodToggle({ value, onChange }: { value: Period; onChange: (period: Period) => void }) {
+  const { t } = useI18n()
+  return (
+    <div className="inline-flex rounded-xl border border-slate-300 bg-white p-0.5 text-sm">
+      {PERIODS.map((p) => (
+        <button
+          key={p}
+          type="button"
+          aria-pressed={value === p}
+          onClick={() => onChange(p)}
+          className={`rounded-lg px-3 py-1.5 font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+            value === p ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          {t.billing.period[p]}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** A plan on sale (an item of a `<ul>`): name, discount, price, seats, and its button. */
+export function PlanOption({
+  plan,
+  label,
+  busy,
+  disabled,
+  onSelect,
+  children,
+}: {
+  plan: Plan
+  label: string
+  busy: boolean
+  disabled: boolean
+  onSelect: () => void
+  /** Shown above the button. */
+  children?: ReactNode
+}) {
+  const { t, lang } = useI18n()
+  return (
+    <li className="flex flex-col rounded-2xl border border-slate-200 p-5">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="font-semibold text-slate-900">{plan.name[lang]}</h3>
+        {plan.discountPercent > 0 && (
+          <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
+            {t.billing.discount(plan.discountPercent)}
+          </span>
+        )}
+      </div>
+      <p className="mt-3">
+        <span className="text-2xl font-bold text-slate-900">{formatPrice(plan.price, lang)}</span>{' '}
+        <span className="text-sm text-slate-500">{t.billing.perPeriod[plan.period]}</span>
+      </p>
+      {plan.listPrice > plan.price && (
+        <p className="text-sm text-slate-400">
+          <s>{t.billing.listPrice(formatPrice(plan.listPrice, lang))}</s>
+        </p>
+      )}
+      {plan.agentSeats && <p className="mt-2 text-sm text-slate-600">{t.billing.seats(plan.agentSeats)}</p>}
+      {children}
+      {/* Bottom-aligned, so the buttons of plans side by side line up. */}
+      <div className="mt-auto pt-4">
+        <Button className="w-full" onClick={onSelect} disabled={disabled}>
+          {busy && <Spinner />} {label}
+        </Button>
+      </div>
+    </li>
+  )
+}
+
 function PlanPicker({ audience, plans }: { audience: 'agent' | 'agency'; plans: Plan[] }) {
   const { t, lang } = useI18n()
   const [period, setPeriod] = useState<Period>('month')
@@ -535,48 +632,19 @@ function PlanPicker({ audience, plans }: { audience: 'agent' | 'agency'; plans: 
           <h2 className="text-lg font-semibold text-slate-900">{t.billing.chooseTitle}</h2>
           <p className="mt-1 text-sm text-slate-500">{audience === 'agency' ? t.billing.chooseAgency : t.billing.chooseAgent}</p>
         </div>
-        <div className="inline-flex rounded-xl border border-slate-300 bg-white p-0.5 text-sm">
-          {PERIODS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              aria-pressed={period === p}
-              onClick={() => setPeriod(p)}
-              className={`rounded-lg px-3 py-1.5 font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-                period === p ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              {t.billing.period[p]}
-            </button>
-          ))}
-        </div>
+        <PeriodToggle value={period} onChange={setPeriod} />
       </div>
 
       <ul className="grid gap-4 sm:grid-cols-2">
         {shown.map((plan) => (
-          <li key={plan.code} className="flex flex-col rounded-2xl border border-slate-200 p-5">
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="font-semibold text-slate-900">{plan.name[lang]}</h3>
-              {plan.discountPercent > 0 && (
-                <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
-                  {t.billing.discount(plan.discountPercent)}
-                </span>
-              )}
-            </div>
-            <p className="mt-3">
-              <span className="text-2xl font-bold text-slate-900">{formatPrice(plan.price, lang)}</span>{' '}
-              <span className="text-sm text-slate-500">{t.billing.perPeriod[plan.period]}</span>
-            </p>
-            {plan.listPrice > plan.price && (
-              <p className="text-sm text-slate-400">
-                <s>{t.billing.listPrice(formatPrice(plan.listPrice, lang))}</s>
-              </p>
-            )}
-            {plan.agentSeats && <p className="mt-2 text-sm text-slate-600">{t.billing.seats(plan.agentSeats)}</p>}
-            <Button className="mt-4 w-full" onClick={() => pay(plan.code)} disabled={busy !== null}>
-              {busy === plan.code && <Spinner />} {t.billing.pay}
-            </Button>
-          </li>
+          <PlanOption
+            key={plan.code}
+            plan={plan}
+            label={t.billing.pay}
+            busy={busy === plan.code}
+            disabled={busy !== null}
+            onSelect={() => pay(plan.code)}
+          />
         ))}
       </ul>
 
@@ -646,7 +714,7 @@ function PaymentHistory({ payments, plans }: { payments: Payment[]; plans: Plan[
   )
 }
 
-function ContactLink() {
+export function ContactLink() {
   const { t } = useI18n()
   return (
     <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium text-indigo-600 hover:underline">

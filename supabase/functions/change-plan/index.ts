@@ -1,7 +1,9 @@
-// POST { plan, lang } with the user's session: upgrades the user's (or their
-// agency's) subscription to `plan` now, charging the prorated difference on
-// the saved card. The new plan keeps the old period's dates. Downgrades are
-// scheduled by the billing page itself (schedule_plan_change), not here.
+// POST { plan, lang, agency_name? } with the user's session: upgrades the
+// user's (or their agency's) subscription to `plan` now, charging the
+// prorated difference on the saved card. The new plan keeps the old period's
+// dates. An agent outside an agency moving to an agency plan opens an agency
+// named agency_name. Downgrades are scheduled by the billing page itself
+// (schedule_plan_change), not here.
 // See docs/cardcom-integration.md, Task 6.
 //
 // The amount and the payer come from start_upgrade, never from the
@@ -12,7 +14,14 @@ import { CARD_COLUMNS, payerOf, responseFields, tokenChargeBody, type ChargeBody
 import { admin, must, rpc, sessionUser } from '../_shared/db.ts'
 import { ApiError, handler, str } from '../_shared/http.ts'
 
-type StartResult = { subscription_id: string; amount: number; new_org_id: string; payment_id: string | null }
+type StartResult = {
+  subscription_id: string
+  amount: number
+  /** Null: the upgrade opens a new agency, named agency_name. */
+  new_org_id: string | null
+  agency_name: string | null
+  payment_id: string | null
+}
 
 type UpgradeResult = { result: 'upgraded' | 'duplicate' | 'already_done'; subscription_id: string | null }
 
@@ -35,9 +44,10 @@ Deno.serve(
 
     // Checks the change under a lock and inserts the pending payment. Raises
     // plan_change_not_allowed (also for downgrades: the billing page calls
-    // schedule_plan_change for those) or upgrade_in_progress (another upgrade
-    // of it is being charged, or was never confirmed).
-    const start = await rpc<StartResult>('start_upgrade', { p_user_id: user.id, p_plan: plan })
+    // schedule_plan_change for those), upgrade_in_progress (another upgrade
+    // of it is being charged, or was never confirmed) or missing_agency_name.
+    const agencyName = str(body.agency_name) || null
+    const start = await rpc<StartResult>('start_upgrade', { p_user_id: user.id, p_plan: plan, p_agency_name: agencyName })
     const subscriptionId = start.subscription_id
 
     const upgrade = (paymentId: string | null, tranzactionId: number | null) =>
@@ -46,6 +56,7 @@ Deno.serve(
         p_plan: plan,
         p_payment_id: paymentId,
         p_tranzaction_id: tranzactionId,
+        p_agency_name: agencyName,
       })
 
     if (!start.payment_id) {
@@ -72,8 +83,11 @@ Deno.serve(
       const [subRes, planRes, payer] = await Promise.all([
         admin.from('subscriptions').select(`current_period_end, ${CARD_COLUMNS}`).eq('id', subscriptionId).single(),
         admin.from('plans').select('name_he, name_en').eq('code', plan).single(),
-        // The agency pays from now on: the same name and email its renewals use.
-        payerOf({ user_id: null, org_id: start.new_org_id }),
+        // The agency pays from now on: the same name and email its renewals
+        // use. A new agency doesn't exist yet: its admin, in its name.
+        start.new_org_id
+          ? payerOf({ user_id: null, org_id: start.new_org_id })
+          : payerOf({ user_id: user.id, org_id: null }).then((p) => ({ ...p, documentName: start.agency_name || p.documentName })),
       ])
       const sub = must(subRes, 'subscriptions')
       const planRow = must(planRes, 'plans')
