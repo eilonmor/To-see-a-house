@@ -4,6 +4,7 @@ import {
   fetchMyPayments,
   fetchMySubscription,
   fetchPlans,
+  formatPrice,
   quotePlanChange,
   scheduleDowngrade,
   setRenewal,
@@ -22,6 +23,7 @@ import { errorText, useI18n } from '../i18n/I18nProvider'
 import type { Lang } from '../i18n/translations'
 import { useAccount } from './AccountGate'
 import { useConfirm } from './ConfirmDialog'
+import { TermsConsent } from './LegalPage'
 import { Alert, Button, Card, Link, Loading, Spinner } from './ui'
 
 type Billing = { plans: Plan[]; subs: MySubscriptions }
@@ -36,14 +38,6 @@ const CONFIRM_TIMEOUT_MS = 60_000
 // A checkout still pending after this was left on CardCom's page without
 // paying: it never finishes, so the history doesn't show it.
 const ABANDONED_CHECKOUT_MS = 60 * 60_000
-
-export const formatPrice = (amount: number, lang: Lang) =>
-  new Intl.NumberFormat(lang === 'en' ? 'en-IL' : 'he-IL', {
-    style: 'currency',
-    currency: 'ILS',
-    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
-    maximumFractionDigits: 2,
-  }).format(amount)
 
 export const longDate = (iso: string, lang: Lang) =>
   formatDate(israelDate(new Date(iso)), lang, { day: 'numeric', month: 'long', year: 'numeric' })
@@ -645,8 +639,12 @@ function PlanPicker({ audience, plans }: { audience: 'agent' | 'agency'; plans: 
   // The plan being paid for, while the browser leaves for CardCom.
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<unknown>(null)
+  // The terms say paying asks to accept them explicitly.
+  const [accepted, setAccepted] = useState(false)
+  const [consentError, setConsentError] = useState(false)
 
   async function pay(code: string) {
+    if (!accepted) return setConsentError(true)
     setBusy(code)
     setError(null)
     try {
@@ -687,6 +685,14 @@ function PlanPicker({ audience, plans }: { audience: 'agent' | 'agency'; plans: 
           {t.billing.moreAgents} <ContactLink />
         </p>
       )}
+      <TermsConsent
+        checked={accepted}
+        onChange={(checked) => {
+          setAccepted(checked)
+          if (checked) setConsentError(false)
+        }}
+        error={consentError ? t.legal.payConsentError : undefined}
+      />
       {error != null && <PaymentErrorAlert prefix={t.billing.payError} error={error} />}
       <p className="text-xs text-slate-500">{t.billing.payNote}</p>
     </Card>

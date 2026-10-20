@@ -72,7 +72,8 @@ Open pages re-fetch every 15 seconds, and again as soon as you return to the tab
    [`supabase/migrations/`](supabase/migrations/) into **SQL Editor** and run them
    in order (`…_init.sql`, `…_accounts.sql`, `…_phone_10_digits.sql`, `…_guest_otp.sql`,
    `…_agencies.sql`, `…_calendar_feed.sql`, `…_booking_notes.sql`, `…_payments.sql`,
-   `…_agency_checkout.sql`, `…_delete_account.sql`), or with the Supabase CLI.
+   `…_agency_checkout.sql`, `…_delete_account.sql`, `…_terms_acceptance.sql`), or with
+   the Supabase CLI.
    Hold back `…_payments.sql` until the payment functions are deployed (step 11),
    and apply it last: from then on, agents and agencies can't add properties or
    accept agents without a subscription. It is safe to run again after it changes,

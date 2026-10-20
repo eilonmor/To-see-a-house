@@ -29,6 +29,7 @@ import { usePolledData } from '../hooks/usePolledData'
 import { navigate } from '../hooks/useRoute'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { useAccount } from './AccountGate'
+import { TermsConsent } from './LegalPage'
 import {
   canMoveToAgency,
   ContactLink,
@@ -123,6 +124,9 @@ function OpenAgency() {
   const [error, setError] = useState<unknown>(null)
   // Opened, but the profile couldn't be reloaded: opening again would fail.
   const [opened, setOpened] = useState(false)
+  // The terms say paying asks to accept them explicitly.
+  const [accepted, setAccepted] = useState(false)
+  const [consentError, setConsentError] = useState(false)
 
   // Loaded once, not polled: plans rarely change, and the database checks
   // the plan and the subscription again when paying.
@@ -147,6 +151,7 @@ function OpenAgency() {
       document.getElementById('agency-name')?.focus()
       return
     }
+    if (!accepted) return setConsentError(true)
     setBusy(plan.code)
     setError(null)
     try {
@@ -245,6 +250,14 @@ function OpenAgency() {
       <p className="text-sm text-slate-500">
         {t.billing.moreAgents} <ContactLink />
       </p>
+      <TermsConsent
+        checked={accepted}
+        onChange={(checked) => {
+          setAccepted(checked)
+          if (checked) setConsentError(false)
+        }}
+        error={consentError ? t.legal.payConsentError : undefined}
+      />
       {error != null && <PaymentErrorAlert error={error} />}
       {opened && <Alert tone="info">{t.account.reloadAfterAction}</Alert>}
       <p className="text-xs text-slate-500">{t.billing.payNote}</p>
