@@ -23,6 +23,7 @@ import { errorText, useI18n } from '../i18n/I18nProvider'
 import type { Lang } from '../i18n/translations'
 import { useAccount } from './AccountGate'
 import { useConfirm } from './ConfirmDialog'
+import { TermsConsent } from './LegalPage'
 import { Alert, Button, Card, Link, Loading, Spinner } from './ui'
 
 type Billing = { plans: Plan[]; subs: MySubscriptions }
@@ -638,8 +639,12 @@ function PlanPicker({ audience, plans }: { audience: 'agent' | 'agency'; plans: 
   // The plan being paid for, while the browser leaves for CardCom.
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<unknown>(null)
+  // The terms say paying asks to accept them explicitly.
+  const [accepted, setAccepted] = useState(false)
+  const [consentError, setConsentError] = useState(false)
 
   async function pay(code: string) {
+    if (!accepted) return setConsentError(true)
     setBusy(code)
     setError(null)
     try {
@@ -680,6 +685,14 @@ function PlanPicker({ audience, plans }: { audience: 'agent' | 'agency'; plans: 
           {t.billing.moreAgents} <ContactLink />
         </p>
       )}
+      <TermsConsent
+        checked={accepted}
+        onChange={(checked) => {
+          setAccepted(checked)
+          if (checked) setConsentError(false)
+        }}
+        error={consentError ? t.legal.payConsentError : undefined}
+      />
       {error != null && <PaymentErrorAlert prefix={t.billing.payError} error={error} />}
       <p className="text-xs text-slate-500">{t.billing.payNote}</p>
     </Card>

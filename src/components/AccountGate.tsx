@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { applyPendingAccountType, fetchProfile, signOut, type Profile } from '../lib/auth'
+import { applyPendingSignupChoices, fetchProfile, signOut, type Profile } from '../lib/auth'
 import { useSession } from '../hooks/useSession'
 import { navigate, useRoute } from '../hooks/useRoute'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Alert, Button, Link, Loading } from './ui'
 import LoginForm from './LoginForm'
+import TermsPrompt from './TermsPrompt'
 
 /**
  * `reloadProfile` throws when the profile can't be loaded, so that a flow
@@ -30,6 +31,7 @@ export function useAccount(): Account {
 export default function AccountGate({ children }: { children: ReactNode }) {
   const { t } = useI18n()
   const session = useSession()
+  const path = useRoute().replace(/\/+$/, '')
   const user = session?.user
   const userId = user?.id
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -39,13 +41,13 @@ export default function AccountGate({ children }: { children: ReactNode }) {
     if (!userId) return
     try {
       const loaded = await fetchProfile(userId)
-      let upgraded = false
+      let changed = false
       try {
-        upgraded = await applyPendingAccountType(loaded)
+        changed = await applyPendingSignupChoices(loaded)
       } catch {
-        // The choice is kept and retried on the next load; meanwhile the account works as personal.
+        // The choices are kept and retried on the next load; meanwhile the account works as personal.
       }
-      setProfile(upgraded ? await fetchProfile(userId) : loaded)
+      setProfile(changed ? await fetchProfile(userId) : loaded)
       setError(null)
     } catch (err) {
       setError(err)
@@ -86,8 +88,16 @@ export default function AccountGate({ children }: { children: ReactNode }) {
         </div>
       )}
       {children}
+      {/* Not on the account page, so a user who doesn't accept can still delete the account. */}
+      {!current.termsAccepted && path !== '/dashboard/account' && <TermsPrompt onAccepted={reloadProfile} onLogout={logout} />}
     </AccountContext.Provider>
   )
+}
+
+async function logout() {
+  // Supabase clears the local session even when the request fails.
+  await signOut().catch(() => {})
+  navigate('/')
 }
 
 function AccountBar({ user, profile }: { user: User; profile: Profile }) {
@@ -100,12 +110,6 @@ function AccountBar({ user, profile }: { user: User; profile: Profile }) {
     { href: '/dashboard/billing', label: t.billing.nav },
     { href: '/dashboard/account', label: t.account.nav },
   ]
-
-  async function logout() {
-    // Supabase clears the local session even when the request fails.
-    await signOut().catch(() => {})
-    navigate('/')
-  }
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-2.5 text-sm shadow-sm">

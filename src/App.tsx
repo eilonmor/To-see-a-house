@@ -19,6 +19,7 @@ import CalendarPage from './components/CalendarPage'
 import BillingPage, { PaymentHistoryPage } from './components/BillingPage'
 import JoinRoute from './components/JoinPage'
 import AccountPage from './components/AccountPage'
+import LegalPage from './components/LegalPage'
 import { Card, Link, Loading, Redirect } from './components/ui'
 
 // A malformed link (e.g. "/p/%") can't be decoded; the raw text then simply
@@ -60,6 +61,8 @@ export default function App() {
   else if (path === '/signup') page = guestOnly(<SignupPage />)
   else if (path === '/forgot-password') page = <ForgotPassword />
   else if (path === '/reset-password') page = <ResetPassword />
+  else if (path === '/terms') page = <LegalPage doc="terms" />
+  else if (path === '/privacy') page = <LegalPage doc="privacy" />
   else if (path === '/admin') page = <Redirect to="/dashboard" />
   else if (path === '/dashboard') page = <AccountGate><PropertyList /></AccountGate>
   else if (path === '/dashboard/new') page = <AccountGate><NewProperty /></AccountGate>
