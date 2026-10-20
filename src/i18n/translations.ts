@@ -143,7 +143,6 @@ const he = {
       free: 'חינם',
       forever: 'לתמיד',
       discount: (percent: number) => `${percent}% הנחה`,
-      save: (amount: string) => `חוסכים ${amount}`,
       perMonthYearly: (amount: string) => `${amount} לחודש, בתשלום אחד`,
       orYearly: (amount: string) => `או ${amount} בתשלום שנתי`,
       private: {
@@ -868,7 +867,6 @@ const en: Translation = {
       free: 'Free',
       forever: 'Forever',
       discount: (percent: number) => `${percent}% off`,
-      save: (amount: string) => `Save ${amount}`,
       perMonthYearly: (amount: string) => `${amount} a month, paid once`,
       orYearly: (amount: string) => `or ${amount} paid yearly`,
       private: {

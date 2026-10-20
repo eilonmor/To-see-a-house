@@ -14,6 +14,14 @@ import { BookingError, callFunction, run } from './supabase'
 
 export type Period = 'month' | 'year'
 
+export const formatPrice = (amount: number, lang: Lang) =>
+  new Intl.NumberFormat(lang === 'en' ? 'en-IL' : 'he-IL', {
+    style: 'currency',
+    currency: 'ILS',
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(amount)
+
 export type Plan = {
   code: string
   audience: 'agent' | 'agency'

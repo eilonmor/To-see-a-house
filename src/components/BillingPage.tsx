@@ -4,6 +4,7 @@ import {
   fetchMyPayments,
   fetchMySubscription,
   fetchPlans,
+  formatPrice,
   quotePlanChange,
   scheduleDowngrade,
   setRenewal,
@@ -36,14 +37,6 @@ const CONFIRM_TIMEOUT_MS = 60_000
 // A checkout still pending after this was left on CardCom's page without
 // paying: it never finishes, so the history doesn't show it.
 const ABANDONED_CHECKOUT_MS = 60 * 60_000
-
-export const formatPrice = (amount: number, lang: Lang) =>
-  new Intl.NumberFormat(lang === 'en' ? 'en-IL' : 'he-IL', {
-    style: 'currency',
-    currency: 'ILS',
-    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
-    maximumFractionDigits: 2,
-  }).format(amount)
 
 export const longDate = (iso: string, lang: Lang) =>
   formatDate(israelDate(new Date(iso)), lang, { day: 'numeric', month: 'long', year: 'numeric' })

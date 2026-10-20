@@ -1,9 +1,12 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { CalendarCheck, CalendarClock, ChevronDown, Languages, Link as LinkIcon, MapPin, PhoneMissed, ShieldCheck, StickyNote, Table, Users, type LucideIcon } from 'lucide-react'
 import { CONTACT_EMAIL } from '../config'
 import { useI18n } from '../i18n/I18nProvider'
 import { LANGUAGES } from '../i18n/translations'
+import { fetchPlans, formatPrice, type Period } from '../lib/billingStore'
 import { formatDate } from '../lib/bookingStore'
+import { isConfigured } from '../lib/supabase'
+import { SetupBanner } from './Layout'
 import { Link } from './ui'
 import {
   CheckIcon,
@@ -20,16 +23,49 @@ import {
 } from './LandingMockups'
 
 type Audience = 'owners' | 'agents'
-type Period = 'month' | 'year'
+type PlanKey = 'agent' | 'office2' | 'office5'
+type PlanPrice = { price: number; list: number; discount: number }
+type Prices = Record<PlanKey, Record<Period, PlanPrice>>
 
-// The plans' prices in ₪ (final, no VAT). Yearly list price = monthly list price × 12.
-const PLANS = {
-  agent: { month: 23, monthList: 33, year: 216, discount: 30 },
-  office2: { month: 60, monthList: 92, year: 576, discount: 35 },
-  office5: { month: 120, monthList: 185, year: 1152, discount: 35 },
+const PLAN_CODES: Record<PlanKey, Record<Period, string>> = {
+  agent: { month: 'agent_monthly', year: 'agent_yearly' },
+  office2: { month: 'agency_small_monthly', year: 'agency_small_yearly' },
+  office5: { month: 'agency_large_monthly', year: 'agency_large_yearly' },
 }
 
-const shekels = (n: number) => `₪${n.toLocaleString('en-US')}`
+// Shown until the plans table loads, or if it can't be read: the prices seeded
+// in supabase/migrations/20261012000000_payments.sql (₪, final, no VAT).
+const SEEDED_PRICES: Prices = {
+  agent: { month: { price: 23, list: 33, discount: 30 }, year: { price: 216, list: 309, discount: 30 } },
+  office2: { month: { price: 60, list: 92, discount: 35 }, year: { price: 576, list: 886, discount: 35 } },
+  office5: { month: { price: 120, list: 185, discount: 35 }, year: { price: 1152, list: 1772, discount: 35 } },
+}
+
+/** The plans' prices, from the plans table (readable without logging in), so they match checkout. */
+function usePrices(): Prices {
+  const [prices, setPrices] = useState(SEEDED_PRICES)
+  useEffect(() => {
+    if (!isConfigured) return
+    let active = true
+    fetchPlans().then(
+      (plans) => {
+        if (!active) return
+        const byCode = new Map(plans.map((p) => [p.code, p]))
+        const price = (key: PlanKey, period: Period): PlanPrice => {
+          const p = byCode.get(PLAN_CODES[key][period])
+          return p ? { price: p.price, list: p.listPrice, discount: p.discountPercent } : SEEDED_PRICES[key][period]
+        }
+        const plan = (key: PlanKey) => ({ month: price(key, 'month'), year: price(key, 'year') })
+        setPrices({ agent: plan('agent'), office2: plan('office2'), office5: plan('office5') })
+      },
+      () => {},
+    )
+    return () => {
+      active = false
+    }
+  }, [])
+  return prices
+}
 
 const FEATURE_ICONS: LucideIcon[] = [LinkIcon, CalendarCheck, ShieldCheck, MapPin, Table, StickyNote, CalendarClock, Users, Languages]
 const CHAT_NAME_COLORS = ['text-indigo-700', 'text-emerald-700', 'text-amber-700', 'text-rose-700']
@@ -65,162 +101,166 @@ export default function Landing({ loggedIn }: { loggedIn: boolean }) {
   const heroRef = useRef<HTMLElement>(null)
   const endRef = useRef<HTMLElement>(null)
   const sticky = useStickyBar(heroRef, endRef)
+  const prices = usePrices()
 
   return (
     <div className="min-h-screen overflow-x-clip bg-slate-50 text-slate-800">
       <Header loggedIn={loggedIn} />
+      <SetupBanner className="mt-4" />
 
-      {/* Hero */}
-      <section ref={heroRef} className="bg-linear-to-b from-indigo-50 to-slate-50 to-85%">
-        <div className={`${container} flex flex-col gap-9 pt-7 pb-12 sm:pt-12 lg:flex-row lg:items-center lg:gap-16 lg:pt-[72px] lg:pb-[88px]`}>
-          <div className="min-w-0 lg:flex-1">
-            <span className="inline-flex items-center rounded-full border border-indigo-100 bg-white px-3 py-1 text-sm font-medium text-indigo-700">
-              {L.hero.badge}
-            </span>
-            <h1 className="mt-5 text-[36px] leading-[1.1] font-bold tracking-[-0.03em] text-balance text-slate-900 sm:text-5xl lg:text-[58px]">
-              {L.hero.title}
-              <span className="text-indigo-600">{L.hero.titleAccent}</span>
-            </h1>
-            <p className="mt-[18px] max-w-[500px] text-[17px] leading-relaxed text-pretty text-slate-600 sm:text-xl">{L.hero.subtitle}</p>
-            <div className="mt-8 flex max-w-[460px] flex-wrap gap-3">
-              <Link
-                href={ctaHref}
-                className={`${primaryBtn} min-h-[52px] flex-[1_1_180px] px-[22px] py-3 text-base shadow-[0_4px_6px_-1px_rgba(79,70,229,.25),0_2px_4px_-2px_rgba(79,70,229,.25)]`}
-              >
-                {loggedIn ? L.myProperties : L.signupFree}
-              </Link>
-              <a href="#audience" onClick={() => setAudience('agents')} className={`${secondaryBtn} min-h-[52px] flex-[1_1_180px] gap-2 px-[22px] py-3 text-base`}>
-                {L.hero.forAgents} <span aria-hidden="true">{arrow}</span>
-              </a>
+      <main>
+        {/* Hero */}
+        <section ref={heroRef} className="bg-linear-to-b from-indigo-50 to-slate-50 to-85%">
+          <div className={`${container} flex flex-col gap-9 pt-7 pb-12 sm:pt-12 lg:flex-row lg:items-center lg:gap-16 lg:pt-[72px] lg:pb-[88px]`}>
+            <div className="min-w-0 lg:flex-1">
+              <span className="inline-flex items-center rounded-full border border-indigo-100 bg-white px-3 py-1 text-sm font-medium text-indigo-700">
+                {L.hero.badge}
+              </span>
+              <h1 className="mt-5 text-[36px] leading-[1.1] font-bold tracking-[-0.03em] text-balance text-slate-900 sm:text-5xl lg:text-[58px]">
+                {L.hero.title}
+                <span className="text-indigo-600">{L.hero.titleAccent}</span>
+              </h1>
+              <p className="mt-[18px] max-w-[500px] text-[17px] leading-relaxed text-pretty text-slate-600 sm:text-xl">{L.hero.subtitle}</p>
+              <div className="mt-8 flex max-w-[460px] flex-wrap gap-3">
+                <Link
+                  href={ctaHref}
+                  className={`${primaryBtn} min-h-[52px] flex-[1_1_180px] px-[22px] py-3 text-base shadow-[0_4px_6px_-1px_rgba(79,70,229,.25),0_2px_4px_-2px_rgba(79,70,229,.25)]`}
+                >
+                  {loggedIn ? L.myProperties : L.signupFree}
+                </Link>
+                <a href="#audience" onClick={() => setAudience('agents')} className={`${secondaryBtn} min-h-[52px] flex-[1_1_180px] gap-2 px-[22px] py-3 text-base`}>
+                  {L.hero.forAgents} <span aria-hidden="true">{arrow}</span>
+                </a>
+              </div>
+              <ul className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-lg text-slate-600">
+                {L.hero.checks.map((check) => (
+                  <li key={check} className="flex items-center gap-2">
+                    <CheckIcon className="h-5 w-5 text-emerald-600" />
+                    {check}
+                  </li>
+                ))}
+              </ul>
             </div>
-            <ul className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-lg text-slate-600">
-              {L.hero.checks.map((check) => (
-                <li key={check} className="flex items-center gap-2">
-                  <CheckIcon className="h-5 w-5 text-emerald-600" />
-                  {check}
+
+            <div className="min-w-0 lg:flex-1">
+              {/* Desktop: the dashboard table with the visitor's phone in front of it. */}
+              <div className="relative hidden h-[630px] lg:block">
+                <div className="absolute start-0 top-0 w-[600px] [zoom:0.86]">
+                  <DayTableMock day={days[0]} rows={rows} />
+                </div>
+                <div className="absolute end-0 top-[242px] [zoom:0.62]">
+                  <PhoneFrame className="shadow-[0_40px_80px_-24px_rgba(15,23,42,.4)]">
+                    <SlotsScreen days={days} state={slots} back />
+                  </PhoneFrame>
+                </div>
+              </div>
+              {/* Mobile: the phone, fading out at the bottom, and today's visitors on top of it. */}
+              <div className="relative mx-auto w-fit pb-2 lg:hidden">
+                <div className="h-[680px] overflow-hidden [zoom:0.8] mask-b-from-78%">
+                  <PhoneFrame className="shadow-[0_40px_80px_-24px_rgba(15,23,42,.4)]">
+                    <SlotsScreen days={days} state={slots} back />
+                  </PhoneFrame>
+                </div>
+                <div className="absolute -start-6 bottom-7 w-[214px] rounded-[14px] border border-slate-200 bg-white px-3.5 py-3 text-[13px] leading-[18px] shadow-[0_20px_40px_-12px_rgba(15,23,42,.25)]">
+                  <div className="flex items-center justify-between gap-2 font-semibold text-slate-900">
+                    <span>{L.demo.comingOn(formatDate(days[0].date, lang, { weekday: 'short' }))}</span>
+                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">{L.demo.visitors(days[0].taken.length)}</span>
+                  </div>
+                  <div className="mt-2 flex flex-col gap-1.5">
+                    {rows
+                      .filter((r) => r.booked)
+                      .slice(0, 3)
+                      .map((r) => (
+                        <div key={r.time} className="flex items-center gap-2">
+                          <span className="w-[38px] font-semibold text-slate-900">{r.time}</span>
+                          <span className="min-w-0 flex-1 truncate text-slate-800">{r.booked && r.name}</span>
+                          <span dir="ltr" className="text-xs text-indigo-600">
+                            {r.booked && r.phone}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* How it works */}
+        <section id="how" className="border-t border-slate-100 bg-white">
+          <Reveal className={`${container} ${sectionPad}`}>
+            <SectionTitle title={L.how.title} subtitle={L.how.subtitle} />
+            <ol className="mt-10 grid gap-4 md:grid-cols-3">
+              {L.how.steps.map((step, i) => (
+                <li key={step.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+                  <div className="flex items-center gap-3">
+                    <span className={`grid h-9 w-9 place-items-center rounded-full font-bold text-white ${i === 2 ? 'bg-emerald-500' : 'bg-indigo-600'}`}>{i + 1}</span>
+                    <span className="h-px flex-1 bg-slate-200" />
+                  </div>
+                  <h3 className="mt-5 text-[19px] leading-snug font-semibold text-slate-900">{step.title}</h3>
+                  <p className="mt-2 text-[15px] leading-relaxed text-slate-500">{step.body}</p>
                 </li>
               ))}
+            </ol>
+          </Reveal>
+        </section>
+
+        <AudienceSection audience={audience} setAudience={setAudience} loggedIn={loggedIn} agentPrice={prices.agent.month} />
+        <BeforeAfterSection day={days[0]} rows={rows} />
+
+        {/* Features */}
+        <section id="features" className="scroll-mt-20 border-t border-slate-100 bg-slate-50">
+          <Reveal className={`${container} ${sectionPad}`}>
+            <SectionTitle title={L.features.title} subtitle={L.features.subtitle} />
+            <ul className="mt-10 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
+              {L.features.items.map((feature, i) => {
+                const Icon = FEATURE_ICONS[i]
+                return (
+                  <li key={feature.title} className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.06)] sm:p-6">
+                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-indigo-50 text-indigo-600 sm:h-11 sm:w-11">
+                      <Icon className="h-[18px] w-[18px] sm:h-[22px] sm:w-[22px]" strokeWidth={2} aria-hidden="true" />
+                    </span>
+                    <h3 className="mt-3 text-[15px] leading-snug font-semibold text-slate-900 sm:mt-4 sm:text-[17px]">{feature.title}</h3>
+                    <p className="mt-1 text-[13px] leading-relaxed text-slate-500 sm:mt-1.5 sm:text-[15px]">{feature.body}</p>
+                  </li>
+                )
+              })}
             </ul>
-          </div>
+          </Reveal>
+        </section>
 
-          <div className="min-w-0 lg:flex-1">
-            {/* Desktop: the dashboard table with the visitor's phone in front of it. */}
-            <div className="relative hidden h-[630px] lg:block">
-              <div className="absolute start-0 top-0 w-[600px] [zoom:0.86]">
-                <DayTableMock day={days[0]} rows={rows} />
+        <VisitorsSection days={days} slots={slots} />
+        <PricingSection loggedIn={loggedIn} prices={prices} />
+        <FaqSection />
+
+        {/* Final call to action */}
+        <section ref={endRef} className="bg-slate-50">
+          <div className={`${container} pb-12 lg:pb-20`}>
+            <div className="flex flex-wrap items-center justify-between gap-6 rounded-3xl bg-indigo-600 p-8 shadow-[0_30px_60px_-30px_rgba(67,56,202,.6)] sm:p-12 lg:p-14">
+              <div className="min-w-0 flex-[1_1_380px]">
+                <h2 className="text-[26px] leading-tight font-bold tracking-[-0.02em] text-balance text-white sm:text-[36px]">{L.final.title}</h2>
+                <p className="mt-2.5 text-[17px] leading-relaxed text-indigo-100">{L.final.subtitle}</p>
               </div>
-              <div className="absolute end-0 top-[242px] [zoom:0.62]">
-                <PhoneFrame className="shadow-[0_40px_80px_-24px_rgba(15,23,42,.4)]">
-                  <SlotsScreen days={days} state={slots} back />
-                </PhoneFrame>
-              </div>
-            </div>
-            {/* Mobile: the phone, fading out at the bottom, and today's visitors on top of it. */}
-            <div className="relative mx-auto w-fit pb-2 lg:hidden">
-              <div className="h-[680px] overflow-hidden [zoom:0.8] mask-b-from-78%">
-                <PhoneFrame className="shadow-[0_40px_80px_-24px_rgba(15,23,42,.4)]">
-                  <SlotsScreen days={days} state={slots} back />
-                </PhoneFrame>
-              </div>
-              <div className="absolute -start-6 bottom-7 w-[214px] rounded-[14px] border border-slate-200 bg-white px-3.5 py-3 text-[13px] leading-[18px] shadow-[0_20px_40px_-12px_rgba(15,23,42,.25)]">
-                <div className="flex items-center justify-between gap-2 font-semibold text-slate-900">
-                  <span>{L.demo.comingOn(formatDate(days[0].date, lang, { weekday: 'short' }))}</span>
-                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">{L.demo.visitors(days[0].taken.length)}</span>
-                </div>
-                <div className="mt-2 flex flex-col gap-1.5">
-                  {rows
-                    .filter((r) => r.booked)
-                    .slice(0, 3)
-                    .map((r) => (
-                      <div key={r.time} className="flex items-center gap-2">
-                        <span className="w-[38px] font-semibold text-slate-900">{r.time}</span>
-                        <span className="min-w-0 flex-1 truncate text-slate-800">{r.booked && r.name}</span>
-                        <span dir="ltr" className="text-xs text-indigo-600">
-                          {r.booked && r.phone}
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* How it works */}
-      <section id="how" className="border-t border-slate-100 bg-white">
-        <Reveal className={`${container} ${sectionPad}`}>
-          <SectionTitle title={L.how.title} subtitle={L.how.subtitle} />
-          <ol className="mt-10 grid gap-4 md:grid-cols-3">
-            {L.how.steps.map((step, i) => (
-              <li key={step.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-                <div className="flex items-center gap-3">
-                  <span className={`grid h-9 w-9 place-items-center rounded-full font-bold text-white ${i === 2 ? 'bg-emerald-500' : 'bg-indigo-600'}`}>{i + 1}</span>
-                  <span className="h-px flex-1 bg-slate-200" />
-                </div>
-                <h3 className="mt-5 text-[19px] leading-snug font-semibold text-slate-900">{step.title}</h3>
-                <p className="mt-2 text-[15px] leading-relaxed text-slate-500">{step.body}</p>
-              </li>
-            ))}
-          </ol>
-        </Reveal>
-      </section>
-
-      <AudienceSection audience={audience} setAudience={setAudience} loggedIn={loggedIn} />
-      <BeforeAfterSection day={days[0]} rows={rows} />
-
-      {/* Features */}
-      <section id="features" className="scroll-mt-16 border-t border-slate-100 bg-slate-50">
-        <Reveal className={`${container} ${sectionPad}`}>
-          <SectionTitle title={L.features.title} subtitle={L.features.subtitle} />
-          <ul className="mt-10 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
-            {L.features.items.map((feature, i) => {
-              const Icon = FEATURE_ICONS[i]
-              return (
-                <li key={feature.title} className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.06)] sm:p-6">
-                  <span className="grid h-9 w-9 place-items-center rounded-xl bg-indigo-50 text-indigo-600 sm:h-11 sm:w-11">
-                    <Icon className="h-[18px] w-[18px] sm:h-[22px] sm:w-[22px]" strokeWidth={2} aria-hidden="true" />
-                  </span>
-                  <h3 className="mt-3 text-[15px] leading-snug font-semibold text-slate-900 sm:mt-4 sm:text-[17px]">{feature.title}</h3>
-                  <p className="mt-1 text-[13px] leading-relaxed text-slate-500 sm:mt-1.5 sm:text-[15px]">{feature.body}</p>
-                </li>
-              )
-            })}
-          </ul>
-        </Reveal>
-      </section>
-
-      <VisitorsSection days={days} slots={slots} />
-      <PricingSection loggedIn={loggedIn} />
-      <FaqSection />
-
-      {/* Final call to action */}
-      <section ref={endRef} className="bg-slate-50">
-        <div className={`${container} pb-12 lg:pb-20`}>
-          <div className="flex flex-wrap items-center justify-between gap-6 rounded-3xl bg-indigo-600 p-8 shadow-[0_30px_60px_-30px_rgba(67,56,202,.6)] sm:p-12 lg:p-14">
-            <div className="min-w-0 flex-[1_1_380px]">
-              <h2 className="text-[26px] leading-tight font-bold tracking-[-0.02em] text-balance text-white sm:text-[36px]">{L.final.title}</h2>
-              <p className="mt-2.5 text-[17px] leading-relaxed text-indigo-100">{L.final.subtitle}</p>
-            </div>
-            <div className="flex w-full max-w-[360px] flex-wrap gap-3">
-              <Link
-                href={ctaHref}
-                className="flex min-h-[52px] flex-[1_1_150px] items-center justify-center rounded-xl bg-white px-[22px] py-3 text-base font-semibold text-indigo-700 transition hover:bg-indigo-50 hover:text-indigo-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-600"
-              >
-                {loggedIn ? L.myProperties : L.signupFree}
-              </Link>
-              {!loggedIn && (
+              <div className="flex w-full max-w-[360px] flex-wrap gap-3">
                 <Link
-                  href="/login"
-                  className="flex min-h-[52px] flex-[1_1_120px] items-center justify-center rounded-xl border border-white/50 px-[22px] py-3 text-base font-semibold text-white transition hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                  href={ctaHref}
+                  className="flex min-h-[52px] flex-[1_1_150px] items-center justify-center rounded-xl bg-white px-[22px] py-3 text-base font-semibold text-indigo-700 transition hover:bg-indigo-50 hover:text-indigo-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-600"
                 >
-                  {L.login}
+                  {loggedIn ? L.myProperties : L.signupFree}
                 </Link>
-              )}
+                {!loggedIn && (
+                  <Link
+                    href="/login"
+                    className="flex min-h-[52px] flex-[1_1_120px] items-center justify-center rounded-xl border border-white/50 px-[22px] py-3 text-base font-semibold text-white transition hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                  >
+                    {L.login}
+                  </Link>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </main>
 
       <footer className="border-t border-slate-200 bg-white">
         <div className={`${container} flex flex-wrap items-center justify-between gap-x-6 gap-y-4 pt-7 pb-8 text-sm text-slate-500`}>
@@ -281,11 +321,21 @@ function Header({ loggedIn }: { loggedIn: boolean }) {
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-indigo-50/88 backdrop-blur-[10px]">
       <div className="mx-auto flex max-w-[1160px] items-center justify-between gap-3 px-4 py-3 sm:px-8">
-        <Link href="/" className="flex min-w-0 items-center gap-2 font-semibold text-slate-900">
+        <Link
+          href="/"
+          onClick={(e) => {
+            // Already on "/", where navigate() does nothing: scroll up and drop any #section.
+            e.preventDefault()
+            window.history.replaceState(null, '', '/')
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }}
+          className="flex min-w-0 items-center gap-2 font-semibold text-slate-900"
+        >
           <span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-indigo-600 text-white shadow-sm">
             <HouseIcon />
           </span>
-          <span className="whitespace-nowrap">{t.appName}</span>
+          {/* Too wide next to the buttons on narrow phones, so there it's for screen readers only. */}
+          <span className="whitespace-nowrap max-[440px]:sr-only">{t.appName}</span>
         </Link>
         <nav className="flex items-center gap-1.5 text-sm sm:gap-3.5">
           <button
@@ -325,8 +375,18 @@ function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) 
   )
 }
 
-function AudienceSection({ audience, setAudience, loggedIn }: { audience: Audience; setAudience: (a: Audience) => void; loggedIn: boolean }) {
-  const { t } = useI18n()
+function AudienceSection({
+  audience,
+  setAudience,
+  loggedIn,
+  agentPrice,
+}: {
+  audience: Audience
+  setAudience: (a: Audience) => void
+  loggedIn: boolean
+  agentPrice: PlanPrice
+}) {
+  const { t, lang, dir } = useI18n()
   const L = t.landing
   const A = L.audience[audience]
   const isAgents = audience === 'agents'
@@ -335,11 +395,23 @@ function AudienceSection({ audience, setAudience, loggedIn }: { audience: Audien
     ['agents', L.audience.tabAgents],
   ]
 
+  // Arrow keys (mirrored in RTL), Home and End move between the tabs.
+  function onTabsKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const i = tabs.findIndex(([key]) => key === audience)
+    const next = dir === 'rtl' ? 'ArrowLeft' : 'ArrowRight'
+    const prev = dir === 'rtl' ? 'ArrowRight' : 'ArrowLeft'
+    const to = e.key === next ? (i + 1) % tabs.length : e.key === prev ? (i - 1 + tabs.length) % tabs.length : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -1
+    if (to < 0) return
+    e.preventDefault()
+    setAudience(tabs[to][0])
+    document.getElementById(`audience-tab-${tabs[to][0]}`)?.focus()
+  }
+
   return (
-    <section id="audience" className="scroll-mt-16 border-t border-slate-100 bg-slate-50">
+    <section id="audience" className="scroll-mt-20 border-t border-slate-100 bg-slate-50">
       <Reveal className={`${container} ${sectionPad}`}>
         <SectionTitle title={L.audience.title} subtitle={L.audience.subtitle} />
-        <div role="tablist" className="mt-7 flex w-fit max-w-full gap-1 rounded-[14px] border border-slate-200 bg-white p-1 shadow-[0_1px_2px_rgba(0,0,0,.04)]">
+        <div role="tablist" onKeyDown={onTabsKeyDown} className="mt-7 flex w-fit max-w-full gap-1 rounded-[14px] border border-slate-200 bg-white p-1 shadow-[0_1px_2px_rgba(0,0,0,.04)]">
           {tabs.map(([key, label]) => (
             <button
               key={key}
@@ -347,6 +419,7 @@ function AudienceSection({ audience, setAudience, loggedIn }: { audience: Audien
               role="tab"
               id={`audience-tab-${key}`}
               aria-selected={audience === key}
+              tabIndex={audience === key ? 0 : -1}
               aria-controls="audience-panel"
               onClick={() => setAudience(key)}
               className={`min-h-11 flex-auto rounded-[10px] px-[18px] py-2.5 text-[15px] font-semibold whitespace-nowrap transition ${focusRing} ${
@@ -384,12 +457,12 @@ function AudienceSection({ audience, setAudience, loggedIn }: { audience: Audien
             <span className="text-sm font-medium text-indigo-700">{A.plan}</span>
             <div className="flex flex-wrap items-baseline gap-2">
               <span className="text-[36px] leading-[1.1] font-bold tracking-[-0.02em] text-slate-900">
-                {isAgents ? shekels(PLANS.agent.month) : L.pricing.free}
+                {isAgents ? formatPrice(agentPrice.price, lang) : L.pricing.free}
               </span>
               {isAgents && (
                 <>
                   <span className="text-[15px] text-slate-600">{L.pricing.per.month}</span>
-                  <s className="text-[15px] text-slate-500">{shekels(PLANS.agent.monthList)}</s>
+                  {agentPrice.list > agentPrice.price && <s className="text-[15px] text-slate-500">{formatPrice(agentPrice.list, lang)}</s>}
                 </>
               )}
             </div>
@@ -489,20 +562,27 @@ function VisitorsSection({ days, slots }: { days: ReturnType<typeof demoDays>; s
   const { t } = useI18n()
   const V = t.landing.visitors
   const [flow, setFlow] = useState(2)
-  const screens = [<DetailsScreen key="0" />, <OtpScreen key="1" />, <SlotsScreen key="2" days={days} state={slots} />, <ConfirmationScreen key="3" date={days[0].date} />]
+  // The confirmation shows the slot picked on the screen before it (the day's first free slot until one is picked).
+  const day = days[slots.day]
+  const time = slots.selected ?? day.times.find((time) => !day.taken.includes(time)) ?? day.times[0]
+  const screens = [
+    <DetailsScreen key="0" />,
+    <OtpScreen key="1" />,
+    <SlotsScreen key="2" days={days} state={slots} />,
+    <ConfirmationScreen key="3" date={day.date} time={time} />,
+  ]
 
   return (
     <section id="visitors" className="border-t border-indigo-100 bg-linear-to-b from-indigo-50 to-slate-50">
       <Reveal className={`${container} ${sectionPad}`}>
         <SectionTitle title={V.title} subtitle={V.subtitle} />
         {/* Mobile: one screen at a time. */}
-        <div role="tablist" className="mt-6 grid grid-cols-4 gap-1.5 md:hidden">
+        <div className="mt-6 grid grid-cols-4 gap-1.5 md:hidden">
           {V.tabs.map((label, i) => (
             <button
               key={label}
               type="button"
-              role="tab"
-              aria-selected={flow === i}
+              aria-pressed={flow === i}
               onClick={() => setFlow(i)}
               className={`flex min-h-[52px] flex-col items-center justify-center rounded-xl border text-[15px] leading-tight transition ${focusRing} ${
                 flow === i ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 bg-white text-slate-700'
@@ -535,8 +615,8 @@ function VisitorsSection({ days, slots }: { days: ReturnType<typeof demoDays>; s
   )
 }
 
-function PricingSection({ loggedIn }: { loggedIn: boolean }) {
-  const { t } = useI18n()
+function PricingSection({ loggedIn, prices }: { loggedIn: boolean; prices: Prices }) {
+  const { t, lang } = useI18n()
   const P = t.landing.pricing
   const L = t.landing
   const [period, setPeriod] = useState<Period>('month')
@@ -544,15 +624,17 @@ function PricingSection({ loggedIn }: { loggedIn: boolean }) {
   const cta = (label: string) => (loggedIn ? L.myProperties : label)
   const href = loggedIn ? '/dashboard' : '/signup'
 
-  const paid = (plan: (typeof PLANS)[keyof typeof PLANS]) =>
-    yearly
-      ? {
-          price: shekels(plan.year),
-          list: shekels(plan.monthList * 12),
-          badge: P.save(shekels(plan.month * 12 - plan.year)),
-          note: P.perMonthYearly(shekels(plan.year / 12)),
-        }
-      : { price: shekels(plan.month), list: shekels(plan.monthList), badge: P.discount(plan.discount), note: P.orYearly(shekels(plan.year)) }
+  // The struck-out list price and the discount badge come from the same plan row, like on the billing page.
+  const paid = (key: PlanKey) => {
+    const plan = prices[key]
+    const p = plan[period]
+    return {
+      price: formatPrice(p.price, lang),
+      list: p.list > p.price ? formatPrice(p.list, lang) : undefined,
+      badge: p.discount > 0 ? P.discount(p.discount) : undefined,
+      note: yearly ? P.perMonthYearly(formatPrice(Math.round((p.price / 12) * 100) / 100, lang)) : P.orYearly(formatPrice(plan.year.price, lang)),
+    }
+  }
 
   const periods: [Period, ReactNode][] = [
     ['month', P.monthly],
@@ -565,7 +647,7 @@ function PricingSection({ loggedIn }: { loggedIn: boolean }) {
   ]
 
   return (
-    <section id="pricing" className="scroll-mt-16 border-t border-slate-100 bg-white">
+    <section id="pricing" className="scroll-mt-20 border-t border-slate-100 bg-white">
       <Reveal className={`${container} ${sectionPad}`}>
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div>
@@ -597,17 +679,17 @@ function PricingSection({ loggedIn }: { loggedIn: boolean }) {
             name={P.agent.name}
             desc={P.agent.desc}
             per={P.per[period]}
-            {...paid(PLANS.agent)}
+            {...paid('agent')}
             items={P.agent.items}
             cta={cta(L.signupAgent)}
             href={href}
           />
-          <PlanCard name={P.office2.name} desc={P.office2.desc} per={P.per[period]} {...paid(PLANS.office2)} items={P.office2.items} cta={cta(L.setupOffice)} href={href} />
+          <PlanCard name={P.office2.name} desc={P.office2.desc} per={P.per[period]} {...paid('office2')} items={P.office2.items} cta={cta(L.setupOffice)} href={href} />
           <PlanCard
             name={P.office5.name}
             desc={P.office5.desc}
             per={P.per[period]}
-            {...paid(PLANS.office5)}
+            {...paid('office5')}
             items={[
               ...P.office5.items,
               <>
@@ -677,7 +759,7 @@ function FaqSection() {
   const F = t.landing.faq
   const [open, setOpen] = useState(0)
   return (
-    <section id="faq" className="scroll-mt-16 border-t border-slate-100 bg-slate-50">
+    <section id="faq" className="scroll-mt-20 border-t border-slate-100 bg-slate-50">
       <Reveal className={`mx-auto max-w-[800px] px-5 sm:px-8 ${sectionPad}`}>
         <h2 className="text-[26px] leading-tight font-bold tracking-[-0.02em] text-slate-900 sm:text-[32px] lg:text-[38px]">{F.title}</h2>
         <div className="mt-7 border-t border-slate-200">
@@ -696,11 +778,10 @@ function FaqSection() {
                   <ChevronDown className={`h-5 w-5 flex-none text-slate-500 transition-transform duration-200 ${open === i ? 'rotate-180' : ''}`} aria-hidden="true" />
                 </button>
               </h3>
-              {open === i && (
-                <p id={`faq-a-${i}`} role="region" aria-labelledby={`faq-q-${i}`} className="max-w-[680px] pb-5 text-base leading-relaxed text-slate-600">
-                  {item.a}
-                </p>
-              )}
+              {/* Always rendered (hidden when closed), so the button's aria-controls points at it. */}
+              <p id={`faq-a-${i}`} role="region" aria-labelledby={`faq-q-${i}`} hidden={open !== i} className="max-w-[680px] pb-5 text-base leading-relaxed text-slate-600">
+                {item.a}
+              </p>
             </div>
           ))}
         </div>

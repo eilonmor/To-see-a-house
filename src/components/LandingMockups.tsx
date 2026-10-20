@@ -276,12 +276,12 @@ export function SlotsScreen({ days, state, back = false }: { days: DemoDay[]; st
   )
 }
 
-export function ConfirmationScreen({ date }: { date: string }) {
+export function ConfirmationScreen({ date, time }: { date: string; time: string }) {
   const { t, lang } = useI18n()
   const c = t.confirmation
   const rows: [string, string, boolean?][] = [
     [c.date, formatDate(date, lang, { weekday: 'long', day: 'numeric', month: 'long' })],
-    [c.time, '18:00'],
+    [c.time, time],
     [c.name, t.landing.demo.guest],
     [c.phone, GUEST_PHONE, true],
   ]
