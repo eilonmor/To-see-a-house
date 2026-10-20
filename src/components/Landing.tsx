@@ -590,7 +590,7 @@ function PricingSection({ loggedIn }: { loggedIn: boolean }) {
           </div>
         </div>
 
-        <div className="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-9 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <PlanCard name={P.private.name} desc={P.private.desc} price={P.free} note={P.forever} items={P.private.items} cta={cta(L.signupFree)} href={href} />
           <PlanCard
             featured
@@ -644,28 +644,28 @@ type PlanCardProps = {
 function PlanCard({ name, desc, price, per, list, badge, note, items, cta, href, featured = false }: PlanCardProps) {
   return (
     <div
-      className={`flex flex-col rounded-[20px] bg-white ${
-        featured ? 'border-2 border-indigo-600 p-[23px] shadow-[0_20px_40px_-20px_rgba(79,70,229,.35)]' : 'border border-slate-200 p-6'
+      className={`flex min-w-0 flex-col rounded-[20px] bg-white ${
+        featured ? 'border-2 border-indigo-600 p-[15px] shadow-[0_20px_40px_-20px_rgba(79,70,229,.35)] sm:p-[23px]' : 'border border-slate-200 p-4 sm:p-6'
       }`}
     >
-      <h3 className="text-lg font-semibold text-slate-900">{name}</h3>
-      <p className="mt-1 text-sm text-slate-500">{desc}</p>
-      <div className="mt-5 flex min-h-11 flex-wrap items-baseline gap-1.5">
-        <span className="text-[38px] leading-none font-bold tracking-[-0.02em] text-slate-900">{price}</span>
-        {per && <span className="text-sm text-slate-600">{per}</span>}
-        {list && <s className="text-[15px] text-slate-500">{list}</s>}
-        {badge && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">{badge}</span>}
+      <h3 className="text-base font-semibold text-slate-900 sm:text-lg">{name}</h3>
+      <p className="mt-1 text-[13px] text-slate-500 sm:text-sm">{desc}</p>
+      <div className="mt-4 flex min-h-11 flex-wrap items-baseline gap-1 sm:mt-5 sm:gap-1.5">
+        <span className="text-[28px] leading-none font-bold tracking-[-0.02em] text-slate-900 sm:text-[38px]">{price}</span>
+        {per && <span className="text-xs text-slate-600 sm:text-sm">{per}</span>}
+        {list && <s className="text-[13px] text-slate-500 sm:text-[15px]">{list}</s>}
+        {badge && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 sm:text-xs">{badge}</span>}
       </div>
-      <p className="mt-2 min-h-5 text-[13px] text-slate-500">{note}</p>
-      <ul className="mt-5 flex flex-1 flex-col gap-2.5 text-[15px] text-slate-700">
+      <p className="mt-2 min-h-5 text-xs text-slate-500 sm:text-[13px]">{note}</p>
+      <ul className="mt-4 flex flex-1 flex-col gap-2 text-[13px] text-slate-700 sm:mt-5 sm:gap-2.5 sm:text-[15px]">
         {items.map((item, i) => (
-          <li key={i} className="flex gap-2">
-            <CheckIcon className="mt-0.5 h-[18px] w-[18px] flex-none text-emerald-600" />
-            <span>{item}</span>
+          <li key={i} className="flex gap-1.5 sm:gap-2">
+            <CheckIcon className="mt-0.5 h-4 w-4 flex-none text-emerald-600 sm:h-[18px] sm:w-[18px]" />
+            <span className="min-w-0">{item}</span>
           </li>
         ))}
       </ul>
-      <Link href={href} className={`${featured ? primaryBtn : secondaryBtn} mt-6 min-h-12 text-[15px]`}>
+      <Link href={href} className={`${featured ? primaryBtn : secondaryBtn} mt-5 min-h-12 px-2 text-center text-[13px] sm:mt-6 sm:text-[15px]`}>
         {cta}
       </Link>
     </div>
