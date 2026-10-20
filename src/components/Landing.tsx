@@ -93,10 +93,10 @@ export default function Landing({ loggedIn }: { loggedIn: boolean }) {
                 {L.hero.forAgents} <span aria-hidden="true">{arrow}</span>
               </a>
             </div>
-            <ul className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600">
+            <ul className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-lg text-slate-600">
               {L.hero.checks.map((check) => (
-                <li key={check} className="flex items-center gap-1.5">
-                  <CheckIcon className="h-4 w-4 text-emerald-600" />
+                <li key={check} className="flex items-center gap-2">
+                  <CheckIcon className="h-5 w-5 text-emerald-600" />
                   {check}
                 </li>
               ))}
