@@ -480,10 +480,6 @@ function BeforeAfterSection({ day, rows }: { day: ReturnType<typeof demoDays>[nu
             </p>
           </div>
         </div>
-        {/* TODO: replace with real testimonials (with the users' permission), or remove. */}
-        <div className="mt-8 rounded-2xl border-2 border-dashed border-slate-300 p-[22px] text-center font-mono text-[13px] leading-relaxed text-slate-500">
-          {B.testimonialsPlaceholder}
-        </div>
       </Reveal>
     </section>
   )

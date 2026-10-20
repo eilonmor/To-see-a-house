@@ -111,7 +111,6 @@ const he = {
       afterTitle: 'קישור אחד, רשימה מסודרת',
       linkMessage: 'היי! לתיאום צפייה בדירה בהרצל 12, בוחרים שעה פנויה כאן:',
       everyoneGot: 'כולם קיבלו כתובת, קומה, קוד כניסה וחניה.',
-      testimonialsPlaceholder: '[ מקום שמור להמלצות · רק ציטוטים אמיתיים של משתמשים, באישורם · להסיר אם אין ]',
     },
     features: {
       title: 'מה יש בפנים',
@@ -837,7 +836,6 @@ const en: Translation = {
       afterTitle: 'One link, a tidy list',
       linkMessage: 'Hi! To book a viewing of the apartment at Herzl 12, pick a free time here:',
       everyoneGot: 'Everyone got the address, floor, door code and parking.',
-      testimonialsPlaceholder: '[ Reserved for testimonials · only real quotes from users, with their permission · remove if there are none ]',
     },
     features: {
       title: "What's inside",
