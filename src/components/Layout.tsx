@@ -37,17 +37,24 @@ export default function Layout({ logoHref, nav, children }: Props) {
         </div>
       </header>
 
-      {!isConfigured && (
-        <div className="mx-auto mb-4 max-w-3xl px-4">
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            <strong>{t.setupBanner.title}</strong> {t.setupBanner.body}{' '}
-            <code className="font-mono">VITE_SUPABASE_URL</code> {t.setupBanner.and}{' '}
-            <code className="font-mono">VITE_SUPABASE_ANON_KEY</code>.
-          </div>
-        </div>
-      )}
+      <SetupBanner className="mb-4" />
 
       <main className="mx-auto max-w-3xl px-4 pb-16">{children}</main>
+    </div>
+  )
+}
+
+/** Shown when the build has no Supabase URL or anon key. */
+export function SetupBanner({ className = '' }: { className?: string }) {
+  const { t } = useI18n()
+  if (isConfigured) return null
+  return (
+    <div className={`mx-auto max-w-3xl px-4 ${className}`}>
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <strong>{t.setupBanner.title}</strong> {t.setupBanner.body}{' '}
+        <code className="font-mono">VITE_SUPABASE_URL</code> {t.setupBanner.and}{' '}
+        <code className="font-mono">VITE_SUPABASE_ANON_KEY</code>.
+      </div>
     </div>
   )
 }
