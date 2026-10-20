@@ -32,7 +32,7 @@ const PLANS = {
 const shekels = (n: number) => `₪${n.toLocaleString('en-US')}`
 
 const FEATURE_ICONS: LucideIcon[] = [LinkIcon, CalendarCheck, ShieldCheck, MapPin, Table, StickyNote, CalendarClock, Users, Languages]
-const CHAT_NAME_COLORS = ['text-indigo-700', 'text-emerald-700', 'text-amber-700']
+const CHAT_NAME_COLORS = ['text-indigo-700', 'text-emerald-700', 'text-amber-700', 'text-rose-700']
 
 const focusRing = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2'
 const primaryBtn = `inline-flex items-center justify-center rounded-xl bg-indigo-600 font-semibold text-white transition hover:bg-indigo-700 ${focusRing}`
