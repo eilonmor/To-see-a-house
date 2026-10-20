@@ -173,16 +173,16 @@ export default function Landing({ loggedIn }: { loggedIn: boolean }) {
       <section id="features" className="scroll-mt-16 border-t border-slate-100 bg-slate-50">
         <Reveal className={`${container} ${sectionPad}`}>
           <SectionTitle title={L.features.title} subtitle={L.features.subtitle} />
-          <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="mt-10 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
             {L.features.items.map((feature, i) => {
               const Icon = FEATURE_ICONS[i]
               return (
-                <li key={feature.title} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,.06)]">
-                  <span className="grid h-11 w-11 place-items-center rounded-xl bg-indigo-50 text-indigo-600">
-                    <Icon className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden="true" />
+                <li key={feature.title} className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.06)] sm:p-6">
+                  <span className="grid h-9 w-9 place-items-center rounded-xl bg-indigo-50 text-indigo-600 sm:h-11 sm:w-11">
+                    <Icon className="h-[18px] w-[18px] sm:h-[22px] sm:w-[22px]" strokeWidth={2} aria-hidden="true" />
                   </span>
-                  <h3 className="mt-4 text-[17px] font-semibold text-slate-900">{feature.title}</h3>
-                  <p className="mt-1.5 text-[15px] leading-relaxed text-slate-500">{feature.body}</p>
+                  <h3 className="mt-3 text-[15px] leading-snug font-semibold text-slate-900 sm:mt-4 sm:text-[17px]">{feature.title}</h3>
+                  <p className="mt-1 text-[13px] leading-relaxed text-slate-500 sm:mt-1.5 sm:text-[15px]">{feature.body}</p>
                 </li>
               )
             })}
