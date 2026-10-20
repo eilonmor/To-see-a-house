@@ -40,8 +40,10 @@ const he = {
       body: 'כדי להמשיך להשתמש בשירות יש לקרוא ולאשר את התקנון ואת מדיניות הפרטיות.',
       accept: 'אישור והמשך',
       logout: 'יציאה מהחשבון',
+      deleteAccount: 'למחיקת החשבון',
       error: 'לא ניתן לשמור את האישור:',
     },
+    payConsentError: 'כדי לשלם יש לאשר את התקנון ואת מדיניות הפרטיות.',
   },
   notFound: {
     title: 'הדף לא נמצא',
@@ -780,8 +782,10 @@ const en: Translation = {
       body: 'To keep using the service, please read and accept the terms of use and the privacy policy.',
       accept: 'Accept and continue',
       logout: 'Log out',
+      deleteAccount: 'Delete my account',
       error: "Couldn't save your acceptance:",
     },
+    payConsentError: 'To pay, please accept the terms of use and the privacy policy.',
   },
   notFound: {
     title: 'Page not found',

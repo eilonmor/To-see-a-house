@@ -47,7 +47,7 @@ export const MIN_PASSWORD_LENGTH = 8
 const appUrl = (path: string) => `${window.location.origin}${path}`
 
 export async function signIn(email: string, password: string): Promise<void> {
-  forgetPendingAccountType()
+  forgetPendingSignupChoices()
   await run((db) => db.auth.signInWithPassword({ email: email.trim(), password }))
 }
 
@@ -57,7 +57,7 @@ export async function signIn(email: string, password: string): Promise<void> {
  * has to confirm their email (when Supabase requires it, there's no session yet).
  */
 export async function signUp({ accountType, fullName, phone, email, password }: SignUpDetails): Promise<{ needsConfirmation: boolean }> {
-  forgetPendingAccountType()
+  forgetPendingSignupChoices()
   const data = await run((db) =>
     db.auth.signUp({
       email: email.trim(),
@@ -84,7 +84,7 @@ export async function signUp({ accountType, fullName, phone, email, password }: 
 const PENDING_ACCOUNT_TYPE_KEY = 'pending-account-type'
 const PENDING_TERMS_KEY = 'pending-terms-accepted'
 
-function forgetPendingAccountType() {
+function forgetPendingSignupChoices() {
   try {
     sessionStorage.removeItem(PENDING_ACCOUNT_TYPE_KEY)
     sessionStorage.removeItem(PENDING_TERMS_KEY)
@@ -97,7 +97,7 @@ function forgetPendingAccountType() {
  * Signs in (or up) with Google: the browser leaves for Google and comes back
  * to /dashboard. Google users start as 'personal' without accepted terms;
  * `accountType` 'agent' and `termsAccepted` (the sign-up page's checkbox) are
- * applied on return by applyPendingAccountType().
+ * applied on return by applyPendingSignupChoices().
  */
 export async function signInWithGoogle(accountType?: AccountType, termsAccepted = false): Promise<void> {
   try {
@@ -115,7 +115,7 @@ export async function signInWithGoogle(accountType?: AccountType, termsAccepted 
  * After a Google sign-up, makes the profile an agent and records the accepted
  * terms, as picked on the sign-up page. Returns whether the profile changed.
  */
-export async function applyPendingAccountType(profile: Profile): Promise<boolean> {
+export async function applyPendingSignupChoices(profile: Profile): Promise<boolean> {
   let pendingType: string | null = null
   let pendingTerms = false
   try {
@@ -130,7 +130,7 @@ export async function applyPendingAccountType(profile: Profile): Promise<boolean
   // Throws on failure, keeping the choices so that loading the account again retries.
   if (upgrade) await upgradeToAgent()
   if (accept) await acceptTerms()
-  forgetPendingAccountType()
+  forgetPendingSignupChoices()
   return upgrade || accept
 }
 
