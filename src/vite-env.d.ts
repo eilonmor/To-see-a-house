@@ -7,3 +7,9 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+// Vite's "?raw" imports, used for the legal documents.
+declare module '*.md?raw' {
+  const content: string
+  export default content
+}

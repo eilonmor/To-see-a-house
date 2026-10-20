@@ -3,18 +3,31 @@ import { signInWithGoogle, type AccountType } from '../lib/auth'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Alert, Spinner } from './ui'
 
-/** "Continue with Google", then an "or" divider before the email form. */
-export default function GoogleButton({ accountType }: { accountType?: AccountType }) {
+/**
+ * "Continue with Google", then an "or" divider before the email form.
+ * `onBlocked`, when given, runs instead of signing in (e.g. the terms aren't accepted yet).
+ * `termsAccepted`: the sign-up page's checkbox is ticked, so it's recorded on return.
+ */
+export default function GoogleButton({
+  accountType,
+  termsAccepted,
+  onBlocked,
+}: {
+  accountType?: AccountType
+  termsAccepted?: boolean
+  onBlocked?: () => void
+}) {
   const { t } = useI18n()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   // On success the browser leaves for Google, so `busy` stays on.
   async function handleClick() {
+    if (onBlocked) return onBlocked()
     setBusy(true)
     setError('')
     try {
-      await signInWithGoogle(accountType)
+      await signInWithGoogle(accountType, termsAccepted)
     } catch (err) {
       setError(errorText(err, t))
       setBusy(false)

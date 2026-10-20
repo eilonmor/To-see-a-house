@@ -291,6 +291,12 @@ export default function Landing({ loggedIn }: { loggedIn: boolean }) {
                 </Link>
               </>
             )}
+            <Link href="/terms" className="inline-flex min-h-8 items-center text-slate-600 hover:text-slate-900">
+              {t.legal.terms}
+            </Link>
+            <Link href="/privacy" className="inline-flex min-h-8 items-center text-slate-600 hover:text-slate-900">
+              {t.legal.privacy}
+            </Link>
           </nav>
           <span>{L.footer.copyright(new Date().getFullYear())}</span>
         </div>

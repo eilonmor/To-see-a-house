@@ -40,6 +40,15 @@ export default function Layout({ logoHref, nav, children }: Props) {
       <SetupBanner className="mb-4" />
 
       <main className="mx-auto max-w-3xl px-4 pb-16">{children}</main>
+
+      <footer className="mx-auto flex max-w-3xl flex-wrap justify-center gap-x-5 gap-y-1 px-4 pb-8 text-sm">
+        <Link href="/terms" className="inline-flex min-h-8 items-center text-slate-400 hover:text-slate-700">
+          {t.legal.terms}
+        </Link>
+        <Link href="/privacy" className="inline-flex min-h-8 items-center text-slate-400 hover:text-slate-700">
+          {t.legal.privacy}
+        </Link>
+      </footer>
     </div>
   )
 }

@@ -41,6 +41,7 @@ export type Database = {
           org_id: string | null
           subscription_status: Database['public']['Enums']['subscription_status']
           last_property_created_at: string | null
+          terms_accepted_at: string | null
           created_at: string
         }
         Insert: {
@@ -51,6 +52,7 @@ export type Database = {
           org_id?: string | null
           subscription_status?: Database['public']['Enums']['subscription_status']
           last_property_created_at?: string | null
+          terms_accepted_at?: string | null
           created_at?: string
         }
         Update: Partial<Database['public']['Tables']['profiles']['Insert']>
@@ -403,6 +405,7 @@ export type Database = {
       leave_agency: { Args: Record<PropertyKey, never>; Returns: undefined }
       remove_agent: { Args: { p_agent_id: string }; Returns: undefined }
       become_agent: { Args: Record<PropertyKey, never>; Returns: undefined }
+      accept_terms: { Args: Record<PropertyKey, never>; Returns: undefined }
       delete_account_data: { Args: { p_user_id: string }; Returns: undefined }
       create_calendar_feed: { Args: Record<PropertyKey, never>; Returns: string }
       calendar_feed_events: { Args: { p_token: string }; Returns: Json }

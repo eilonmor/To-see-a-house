@@ -25,7 +25,16 @@ export type Profile = {
   planActive: boolean
   /** The agency's subscription is running (false outside an agency). */
   agencyPlanActive: boolean
+  /** Accepted the current terms of use and privacy policy (see TERMS_UPDATED_AT). */
+  termsAccepted: boolean
 }
+
+/**
+ * When the terms of use or the privacy policy (src/legal/) last changed in a
+ * way users must accept again. Users who accepted before it are asked again,
+ * so bump it with every material change to either document.
+ */
+export const TERMS_UPDATED_AT = new Date('2026-10-20T00:00:00+03:00')
 
 const isRunning = (status: string | null | undefined) => status === 'active' || status === 'past_due'
 
@@ -56,19 +65,29 @@ export async function signUp({ accountType, fullName, phone, email, password }: 
       options: {
         emailRedirectTo: appUrl('/dashboard'),
         // The phone is saved normalized ("0543918750"), whatever way it was typed.
-        data: { role: accountType, full_name: fullName.trim(), phone: phone.trim() ? phoneKey(phone) : '' },
+        // The sign-up page only gets here once the terms and privacy policy are
+        // accepted; the database records the time.
+        data: {
+          role: accountType,
+          full_name: fullName.trim(),
+          phone: phone.trim() ? phoneKey(phone) : '',
+          terms_accepted: true,
+        },
       },
     }),
   )
   return { needsConfirmation: !data.session }
 }
 
-// The account type picked on the sign-up page before leaving for Google.
+// What was picked on the sign-up page before leaving for Google: the account
+// type, and that the terms were accepted.
 const PENDING_ACCOUNT_TYPE_KEY = 'pending-account-type'
+const PENDING_TERMS_KEY = 'pending-terms-accepted'
 
 function forgetPendingAccountType() {
   try {
     sessionStorage.removeItem(PENDING_ACCOUNT_TYPE_KEY)
+    sessionStorage.removeItem(PENDING_TERMS_KEY)
   } catch {
     // storage unavailable — nothing was saved
   }
@@ -76,33 +95,48 @@ function forgetPendingAccountType() {
 
 /**
  * Signs in (or up) with Google: the browser leaves for Google and comes back
- * to /dashboard. Google users start as 'personal'; `accountType` 'agent' is
+ * to /dashboard. Google users start as 'personal' without accepted terms;
+ * `accountType` 'agent' and `termsAccepted` (the sign-up page's checkbox) are
  * applied on return by applyPendingAccountType().
  */
-export async function signInWithGoogle(accountType?: AccountType): Promise<void> {
+export async function signInWithGoogle(accountType?: AccountType, termsAccepted = false): Promise<void> {
   try {
     if (accountType === 'agent') sessionStorage.setItem(PENDING_ACCOUNT_TYPE_KEY, accountType)
     else sessionStorage.removeItem(PENDING_ACCOUNT_TYPE_KEY)
+    if (termsAccepted) sessionStorage.setItem(PENDING_TERMS_KEY, 'true')
+    else sessionStorage.removeItem(PENDING_TERMS_KEY)
   } catch {
-    // storage unavailable — the user stays on the free plan
+    // storage unavailable — the user stays on the free plan, and is asked for the terms on return
   }
   await run((db) => db.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: appUrl('/dashboard') } }))
 }
 
-/** After a Google sign-up as an agent, makes the profile an agent. Returns whether it changed. */
+/**
+ * After a Google sign-up, makes the profile an agent and records the accepted
+ * terms, as picked on the sign-up page. Returns whether the profile changed.
+ */
 export async function applyPendingAccountType(profile: Profile): Promise<boolean> {
-  let pending: string | null = null
+  let pendingType: string | null = null
+  let pendingTerms = false
   try {
-    pending = sessionStorage.getItem(PENDING_ACCOUNT_TYPE_KEY)
+    pendingType = sessionStorage.getItem(PENDING_ACCOUNT_TYPE_KEY)
+    pendingTerms = sessionStorage.getItem(PENDING_TERMS_KEY) === 'true'
   } catch {
     return false
   }
-  if (!pending) return false
-  const upgrade = pending === 'agent' && profile.role === 'personal' && !profile.orgId
-  // Throws on failure, keeping the choice so that loading the account again retries.
+  if (!pendingType && !pendingTerms) return false
+  const upgrade = pendingType === 'agent' && profile.role === 'personal' && !profile.orgId
+  const accept = pendingTerms && !profile.termsAccepted
+  // Throws on failure, keeping the choices so that loading the account again retries.
   if (upgrade) await upgradeToAgent()
+  if (accept) await acceptTerms()
   forgetPendingAccountType()
-  return upgrade
+  return upgrade || accept
+}
+
+/** Records that the user accepted the current terms of use and privacy policy (now, by the database's clock). */
+export async function acceptTerms(): Promise<void> {
+  await run((db) => db.rpc('accept_terms'))
 }
 
 /**
@@ -154,7 +188,7 @@ export async function fetchProfile(userId: string): Promise<Profile> {
   const row = await run((db) =>
     db
       .from('profiles')
-      .select('id, role, full_name, phone, org_id, last_property_created_at, subscription_status, organizations(subscription_status)')
+      .select('id, role, full_name, phone, org_id, last_property_created_at, terms_accepted_at, subscription_status, organizations(subscription_status)')
       .eq('id', userId)
       .maybeSingle(),
   )
@@ -168,6 +202,7 @@ export async function fetchProfile(userId: string): Promise<Profile> {
     lastPropertyCreatedAt: row.last_property_created_at,
     planActive: isRunning(row.subscription_status) || isRunning(row.organizations?.subscription_status),
     agencyPlanActive: isRunning(row.organizations?.subscription_status),
+    termsAccepted: row.terms_accepted_at != null && new Date(row.terms_accepted_at) >= TERMS_UPDATED_AT,
   }
 }
 

@@ -30,6 +30,19 @@ const he = {
     title: 'לא נמצאה דירה',
     notFound: 'הקישור לא תקין או שהדירה הוסרה. בדקו את הקישור שקיבלתם.',
   },
+  legal: {
+    terms: 'תקנון',
+    privacy: 'מדיניות פרטיות',
+    hebrewOnly: 'This document is available in Hebrew only.',
+    // The pop-up for logged-in users who haven't accepted the current documents.
+    prompt: {
+      title: 'התקנון ומדיניות הפרטיות',
+      body: 'כדי להמשיך להשתמש בשירות יש לקרוא ולאשר את התקנון ואת מדיניות הפרטיות.',
+      accept: 'אישור והמשך',
+      logout: 'יציאה מהחשבון',
+      error: 'לא ניתן לשמור את האישור:',
+    },
+  },
   notFound: {
     title: 'הדף לא נמצא',
     body: 'ייתכן שהקישור שגוי או שהדף הוסר.',
@@ -326,6 +339,9 @@ const he = {
     nameError: 'נא להזין שם מלא.',
     phoneError: 'נא להזין מספר טלפון בן 10 ספרות, למשל 054-1234567, או להשאיר ריק.',
     passwordError: (n: number) => `הסיסמה צריכה להכיל לפחות ${n} תווים.`,
+    // Reads: before + terms link + between + privacy link + after.
+    consent: { before: 'קראתי והבנתי את ', between: ' ואת ', after: ', ואני מסכים/ה להם.' },
+    consentError: 'כדי להירשם יש לאשר את התקנון ואת מדיניות הפרטיות.',
     checkEmail: {
       title: 'נשאר רק לאשר את האימייל',
       body: (email: string) => `שלחנו קישור לאישור אל ${email}. פתחו אותו כדי להשלים את ההרשמה.`,
@@ -755,6 +771,18 @@ const en: Translation = {
     title: 'No apartment found',
     notFound: 'The link is invalid or the apartment was removed. Check the link you received.',
   },
+  legal: {
+    terms: 'Terms of use',
+    privacy: 'Privacy policy',
+    hebrewOnly: 'This document is available in Hebrew only.',
+    prompt: {
+      title: 'Terms of use and privacy policy',
+      body: 'To keep using the service, please read and accept the terms of use and the privacy policy.',
+      accept: 'Accept and continue',
+      logout: 'Log out',
+      error: "Couldn't save your acceptance:",
+    },
+  },
   notFound: {
     title: 'Page not found',
     body: 'The link may be wrong, or the page was removed.',
@@ -1049,6 +1077,8 @@ const en: Translation = {
     nameError: 'Please enter your full name.',
     phoneError: 'Please enter a 10-digit phone number, e.g. 054-1234567, or leave it empty.',
     passwordError: (n) => `The password must be at least ${n} characters long.`,
+    consent: { before: 'I have read and understood the ', between: ' and the ', after: ', and I agree to them.' },
+    consentError: 'To sign up, please accept the terms of use and the privacy policy.',
     checkEmail: {
       title: 'One more step: confirm your email',
       body: (email) => `We sent a confirmation link to ${email}. Open it to finish signing up.`,

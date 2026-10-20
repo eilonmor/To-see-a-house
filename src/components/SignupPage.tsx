@@ -6,6 +6,7 @@ import { errorText, useI18n } from '../i18n/I18nProvider'
 import type { Translation } from '../i18n/translations'
 import { Alert, Button, Card, Field, Link, Spinner } from './ui'
 import GoogleButton from './GoogleButton'
+import { TermsConsent } from './LegalPage'
 
 type Errors = Partial<Record<keyof SignUpDetails, string>>
 
@@ -25,6 +26,9 @@ export default function SignupPage() {
   const [errors, setErrors] = useState<Errors>({})
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // Both ways of signing up (email and Google) need the terms and privacy policy accepted.
+  const [accepted, setAccepted] = useState(false)
+  const [consentError, setConsentError] = useState(false)
   // The address a confirmation link was sent to, when Supabase requires one.
   const [sentTo, setSentTo] = useState('')
 
@@ -38,7 +42,8 @@ export default function SignupPage() {
     e.preventDefault()
     const errs = validate(values, t)
     setErrors(errs)
-    if (Object.keys(errs).length > 0) return
+    setConsentError(!accepted)
+    if (Object.keys(errs).length > 0 || !accepted) return
     setBusy(true)
     setError('')
     try {
@@ -99,7 +104,15 @@ export default function SignupPage() {
             })}
           </div>
         </fieldset>
-        <GoogleButton accountType={values.accountType} />
+        <TermsConsent
+          checked={accepted}
+          onChange={(checked) => {
+            setAccepted(checked)
+            if (checked) setConsentError(false)
+          }}
+          error={consentError ? t.signup.consentError : undefined}
+        />
+        <GoogleButton accountType={values.accountType} termsAccepted={accepted} onBlocked={accepted ? undefined : () => setConsentError(true)} />
         <Field id="fullName" label={t.signup.fullName} autoComplete="name" value={values.fullName} onChange={update('fullName')} error={errors.fullName} />
         <Field
           id="phone"

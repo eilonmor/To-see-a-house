@@ -6,6 +6,7 @@ import { navigate, useRoute } from '../hooks/useRoute'
 import { errorText, useI18n } from '../i18n/I18nProvider'
 import { Alert, Button, Link, Loading } from './ui'
 import LoginForm from './LoginForm'
+import TermsPrompt from './TermsPrompt'
 
 /**
  * `reloadProfile` throws when the profile can't be loaded, so that a flow
@@ -86,6 +87,7 @@ export default function AccountGate({ children }: { children: ReactNode }) {
         </div>
       )}
       {children}
+      {!current.termsAccepted && <TermsPrompt onAccepted={reloadProfile} />}
     </AccountContext.Provider>
   )
 }
