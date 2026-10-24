@@ -35,6 +35,10 @@ There are two fully separate environments. Never mix their projects, keys or dat
   first, and to production only after they're validated on `dev` and merged into `main`.
   Follow the production ordering notes in the README (e.g. `…_payments.sql` after the
   payment functions are deployed).
+- A migration that creates a table in `public` must also `grant` the privileges each
+  role needs (`anon`, `authenticated`, `service_role`). Since October 30, 2026 Supabase
+  no longer grants them by default, so without a grant the Data API returns
+  "permission denied", even with RLS policies in place.
 - Edge function secrets (`GUEST_TOKEN_SECRET`, `CARDCOM_*`, `CRON_SECRET`, `APP_URL`, SMS)
   are set per project with `npx supabase secrets set`, never in `.env*` files or `VITE_*`
   variables. Dev uses `SMS_PROVIDER=log` and CardCom's test terminal.
