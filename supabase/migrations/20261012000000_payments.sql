@@ -142,6 +142,8 @@ create policy "payers read their payments" on public.payments
 -- No writes from the browser, and no token, approval number, ID number or
 -- CardCom error text. The app must name the columns it selects (select * fails).
 revoke all on public.plans, public.subscriptions, public.payments from anon, authenticated;
+grant select, insert, update, delete on public.plans, public.subscriptions, public.payments
+  to service_role;
 grant select on public.plans to anon, authenticated;
 grant select (id, user_id, org_id, plan_code, price, period, status,
               current_period_start, current_period_end, cancel_at_period_end,
